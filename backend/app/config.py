@@ -28,7 +28,35 @@ class Settings(BaseSettings):
     # External APIs
     google_maps_api_key: str = ""
     opencorporates_api_key: str = ""
+
+    # Layer 2: Corporate (Alternative)
+    sec_edgar_enabled: bool = True  # Free US corporate data
+
+    # Layer 3: Identity Verification (LexisNexis is OPTIONAL)
+    enable_lexisnexis: bool = False
     lexisnexis_api_key: str = ""
+    lexisnexis_endpoint: str = ""
+
+    # Phone Verification Alternatives
+    phone_verification_provider: Literal["twilio", "numverify", "pattern", "lexisnexis"] = "pattern"
+    twilio_account_sid: str = ""
+    twilio_auth_token: str = ""
+    numverify_api_key: str = ""
+
+    # Email Verification Alternatives
+    email_verification_provider: Literal["hibp", "emailrep", "google", "lexisnexis"] = "hibp"
+    hibp_api_key: str = ""  # Have I Been Pwned
+    emailrep_api_key: str = ""
+    google_search_api_key: str = ""
+    google_search_cx: str = ""
+
+    # Breach History Alternatives
+    breach_verification_provider: Literal["hibp", "lexisnexis"] = "hibp"
+
+    # Layer 5: Employee Ghost Check
+    enable_ghost_check: bool = True
+    dmf_source: Literal["direct", "lexisnexis", "disabled"] = "direct"
+    dmf_file_path: str = "/data/ssdmf.txt"  # SSA Death Master File
 
     # Security
     agency_token: str = "dev-token-12345"
