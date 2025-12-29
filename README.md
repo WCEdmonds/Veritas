@@ -61,14 +61,52 @@ veritas/
 - **API Authentication**: All endpoints require `X-AGENCY-TOKEN` header
 - **Audit Trail**: All actions logged to `audit_logs` table
 
-## Development Phases
+## 4-Layer Investigation Framework
+
+Veritas employs a comprehensive multi-layer approach to fraud detection:
+
+### Layer 1: Physical Verification
+- **StreetViewVisionTool**: Visual confirmation via Google Street View + GPT-4 Vision
+- **PropertyOwnerTool**: Detect undisclosed related-party transactions
+
+### Layer 2: Corporate Verification
+- **RegistryStatusTool**: Verify business legal standing and formation date
+- **DomainForensicsTool**: Identify "pop-up" websites (< 30 days old)
+- **WebContentScraperTool**: Analyze website content for Lorem Ipsum and fake staff bios
+
+### Layer 3: Digital Identity
+- **PhoneCarrierTool**: Detect burner phones (VOIP vs legitimate carriers)
+- **EmailDigitalFootprintTool**: Synthetic identity detection via social presence
+- **BreachHistoryTool**: Counter-intuitive breach analysis (0 breaches = suspicious)
+
+### Layer 4: Document Forensics (Kill Switch)
+- **PDFMetadataTool**: Detect Photoshop/Canva manipulation of financial documents
+
+See [TOOLSET_DOCUMENTATION.md](TOOLSET_DOCUMENTATION.md) for detailed specifications.
+
+## Risk Matrix Scoring
+
+Risk scores are calculated using weighted factors across all layers:
+
+- **Layer 1 (Physical)**: Up to 40 points
+- **Layer 2 (Corporate)**: Up to 50 points
+- **Layer 3 (Identity)**: Up to 25 points
+- **Layer 4 (Forensics)**: KILL SWITCH - Immediate score of 100 if document manipulation detected
+
+**Risk Levels**:
+- 80-100: CRITICAL → **DENY**
+- 70-79: HIGH → **DENY**
+- 40-69: MEDIUM → **FURTHER REVIEW**
+- 0-39: LOW → **APPROVE**
+
+## Development Status
 
 1. ✅ Foundation: Project structure and Docker setup
-2. Data Layer: PostgreSQL schema and models
-3. Agent Tools: API integrations (Google Maps, OpenCorporates, etc.)
-4. Orchestrator: LangGraph-based investigation engine
-5. API Layer: FastAPI endpoints
-6. Frontend: Case management dashboard
+2. ✅ Data Layer: PostgreSQL schema and models
+3. ✅ Agent Tools: 9-tool investigative framework across 4 layers
+4. ✅ Orchestrator: LangGraph-based investigation with risk matrix
+5. ✅ API Layer: FastAPI endpoints with background processing
+6. ✅ Frontend: Case management dashboard with evidence visualization
 
 ## License
 

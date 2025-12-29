@@ -96,7 +96,82 @@ class PaginatedResponse(BaseModel):
     total_pages: int
 
 
-# Tool Output Schemas
+# Tool Output Schemas - Expanded Toolset
+
+# Layer 1: Physical Verification Tools
+class StreetViewVisionOutput(BaseModel):
+    """Output from Street View Vision tool."""
+    building_type: str  # residential, industrial, office, retail
+    signage_detected: bool
+    visual_risk_flag: bool  # True if residential but business is industrial
+    image_url: str
+    description: str
+
+
+class PropertyOwnerOutput(BaseModel):
+    """Output from Property Owner tool."""
+    owner_name: str
+    last_sale_date: Optional[str] = None
+    zoning_code: Optional[str] = None
+    related_party_risk: bool  # If owner name fuzzy matches applicant name
+
+
+# Layer 2: Corporate Verification Tools
+class RegistryStatusOutput(BaseModel):
+    """Output from Registry Status tool."""
+    legal_name: str
+    incorporation_date: str
+    status: str  # Active/Dissolved
+    days_since_incorp: int
+
+
+class DomainForensicsOutput(BaseModel):
+    """Output from Domain Forensics tool."""
+    domain_age_days: int
+    is_template_site: bool
+    registrar: str
+    risk_score: int = Field(ge=0, le=100)
+
+
+class WebContentScraperOutput(BaseModel):
+    """Output from Web Content Scraper tool."""
+    has_lorem_ipsum: bool
+    staff_count_mentioned: int
+    consistency_score: int = Field(ge=0, le=100)  # Low score = fake site
+    about_us_text: Optional[str] = None
+
+
+# Layer 3: Digital Identity Tools
+class PhoneCarrierOutput(BaseModel):
+    """Output from Phone Carrier tool."""
+    carrier: str
+    line_type: str  # VOIP, MOBILE, LANDLINE
+    risk_flag: bool  # True if VOIP
+
+
+class EmailDigitalFootprintOutput(BaseModel):
+    """Output from Email Digital Footprint tool."""
+    registered_profiles: List[str]
+    profile_count: int
+    social_score: str  # LOW, MEDIUM, HIGH
+
+
+class BreachHistoryOutput(BaseModel):
+    """Output from Breach History tool."""
+    breach_count: int
+    synthetic_identity_suspicion: str  # LOW, MEDIUM, HIGH
+
+
+# Layer 4: Document Forensics Tools
+class PDFMetadataOutput(BaseModel):
+    """Output from PDF Metadata tool."""
+    software_tool: str
+    creation_date: Optional[str] = None
+    modified_date: Optional[str] = None
+    is_manipulated: bool
+
+
+# Legacy Tool Output Schemas (for backwards compatibility)
 class GoogleStreetViewOutput(BaseModel):
     """Output from Google Street View tool."""
     is_commercial: bool

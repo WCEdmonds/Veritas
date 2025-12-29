@@ -18,7 +18,8 @@ from app.schemas import (
     PaginatedResponse
 )
 from app.middleware import AgencyAuthMiddleware, AuditLoggingMiddleware
-from app.agent.orchestrator import FraudInvestigationOrchestrator
+# Use enhanced orchestrator with 4-layer investigation
+from app.agent.orchestrator_v2 import EnhancedFraudInvestigationOrchestrator as FraudInvestigationOrchestrator
 from app.config import settings
 
 # Configure logging
