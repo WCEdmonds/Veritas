@@ -8,6 +8,7 @@ export default function LandingPage() {
   const [agency, setAgency] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [selectedCase, setSelectedCase] = useState('minnesota');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -70,6 +71,53 @@ export default function LandingPage() {
       category: "Policy"
     }
   ];
+
+  const fraudCases = {
+    minnesota: {
+      name: "Minnesota Fraud Network (2024)",
+      description: "47 individuals used stolen identities to file 2,100+ fraudulent unemployment claims",
+      amount: "$3.7M stolen",
+      indicators: [
+        { label: "Multiple claims from same address", traditional: false, veritas: true },
+        { label: "SSN belongs to deceased individuals", traditional: false, veritas: true },
+        { label: "Prison inmates filing claims", traditional: false, veritas: true },
+        { label: "Same bank account for 50+ claims", traditional: false, veritas: true },
+        { label: "Plagiarized claim narratives (>90% similarity)", traditional: false, veritas: true },
+        { label: "VOIP phone numbers used", traditional: false, veritas: true },
+        { label: "Fake employer verification", traditional: true, veritas: true },
+      ]
+    },
+    california: {
+      name: "California EDD Fraud (2020-2021)",
+      description: "Organized crime rings stole $11B using identity theft and fake employers",
+      amount: "$11B stolen",
+      indicators: [
+        { label: "Multi-state filing (same SSN in 4+ states)", traditional: false, veritas: true },
+        { label: "Deceased SSN (Death Master File check)", traditional: false, veritas: true },
+        { label: "35,000 prison inmates filing claims", traditional: false, veritas: true },
+        { label: "Employer does not exist in registry", traditional: true, veritas: true },
+        { label: "Fraud ring address (100+ claims)", traditional: false, veritas: true },
+        { label: "No social media presence (synthetic identity)", traditional: false, veritas: true },
+        { label: "Forged termination letters (document forensics)", traditional: false, veritas: true },
+      ]
+    },
+    nigerian: {
+      name: "Nigerian Fraud Ring (2020)",
+      description: "International crime syndicate filed 100,000+ claims using stolen PII from dark web",
+      amount: "$600M stolen",
+      indicators: [
+        { label: "100,000+ claims across 17 states", traditional: false, veritas: true },
+        { label: "Graph network shows connected entities", traditional: false, veritas: true },
+        { label: "Stolen SSNs from data breaches", traditional: false, veritas: true },
+        { label: "IP addresses traced to Nigeria", traditional: true, veritas: true },
+        { label: "Employment verification failed", traditional: true, veritas: true },
+        { label: "Address hopping (10+ moves in 6 months)", traditional: false, veritas: true },
+        { label: "Forged pay stubs (advanced forensics)", traditional: false, veritas: true },
+      ]
+    }
+  };
+
+  const currentCase = fraudCases[selectedCase as keyof typeof fraudCases];
 
   return (
     <div className="min-h-screen bg-[#0A0E1A] text-white overflow-hidden">
@@ -282,6 +330,158 @@ export default function LandingPage() {
                 )}
               </div>
             </div>
+          </div>
+        </div>
+
+        {/* Comparison Chart Section */}
+        <div className="max-w-7xl mx-auto px-6 py-24">
+          <div className="text-center mb-12">
+            <h2 className="text-4xl font-bold mb-4">
+              See What{' '}
+              <span className="bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">
+                Traditional Systems Miss
+              </span>
+            </h2>
+            <p className="text-xl text-gray-400 mb-8">
+              Compare Veritas against real-world fraud cases that cost states billions
+            </p>
+
+            {/* Case Selector Dropdown */}
+            <div className="flex justify-center mb-8">
+              <select
+                value={selectedCase}
+                onChange={(e) => setSelectedCase(e.target.value)}
+                className="bg-[#0F1419] border border-blue-500/30 rounded-lg px-6 py-3 text-white text-lg font-semibold focus:outline-none focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/20 cursor-pointer hover:border-blue-500/50 transition-all"
+              >
+                <option value="minnesota">Minnesota Fraud Network (2024) - $3.7M</option>
+                <option value="california">California EDD Fraud (2020-2021) - $11B</option>
+                <option value="nigerian">Nigerian Fraud Ring (2020) - $600M</option>
+              </select>
+            </div>
+
+            {/* Case Description */}
+            <div className="max-w-3xl mx-auto mb-12 p-6 bg-[#0F1419] border border-red-500/20 rounded-xl">
+              <div className="flex items-start space-x-4">
+                <div className="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center flex-shrink-0">
+                  <svg className="w-6 h-6 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                </div>
+                <div className="text-left">
+                  <div className="text-2xl font-bold text-red-400 mb-2">{currentCase.amount}</div>
+                  <div className="text-lg font-semibold mb-1">{currentCase.name}</div>
+                  <div className="text-gray-400">{currentCase.description}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Comparison Table */}
+          <div className="max-w-5xl mx-auto bg-[#0F1419] border border-blue-500/10 rounded-2xl overflow-hidden shadow-2xl">
+            {/* Table Header */}
+            <div className="grid grid-cols-3 gap-0 border-b border-blue-500/10">
+              <div className="p-6 border-r border-blue-500/10">
+                <div className="text-lg font-semibold text-gray-300">Fraud Indicator</div>
+              </div>
+              <div className="p-6 border-r border-blue-500/10 bg-red-950/20">
+                <div className="text-lg font-semibold text-red-400 text-center">Traditional Systems</div>
+                <div className="text-xs text-gray-500 text-center mt-1">Manual review, siloed data</div>
+              </div>
+              <div className="p-6 bg-blue-950/20">
+                <div className="text-lg font-semibold text-blue-400 text-center">With Veritas</div>
+                <div className="text-xs text-gray-500 text-center mt-1">AI-powered, 18 automated tools</div>
+              </div>
+            </div>
+
+            {/* Table Rows */}
+            {currentCase.indicators.map((indicator, index) => (
+              <div
+                key={index}
+                className="grid grid-cols-3 gap-0 border-b border-blue-500/10 last:border-b-0 hover:bg-blue-500/5 transition-colors"
+              >
+                {/* Indicator Label */}
+                <div className="p-6 border-r border-blue-500/10 flex items-center">
+                  <div className="text-sm text-gray-300">{indicator.label}</div>
+                </div>
+
+                {/* Traditional Detection */}
+                <div className="p-6 border-r border-blue-500/10 bg-red-950/10 flex items-center justify-center">
+                  {indicator.traditional ? (
+                    <div className="flex items-center space-x-2">
+                      <div className="w-6 h-6 rounded-full bg-yellow-500/20 flex items-center justify-center">
+                        <svg className="w-4 h-4 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                        </svg>
+                      </div>
+                      <span className="text-xs text-yellow-400">Sometimes</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center space-x-2">
+                      <div className="w-6 h-6 rounded-full bg-red-500/20 flex items-center justify-center">
+                        <svg className="w-4 h-4 text-red-400" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                        </svg>
+                      </div>
+                      <span className="text-xs text-red-400">Missed</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Veritas Detection */}
+                <div className="p-6 bg-blue-950/10 flex items-center justify-center">
+                  <div className="flex items-center space-x-2">
+                    <div className="w-6 h-6 rounded-full bg-green-500/20 flex items-center justify-center">
+                      <svg className="w-4 h-4 text-green-400" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                      </svg>
+                    </div>
+                    <span className="text-xs text-green-400 font-semibold">Detected</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+
+            {/* Summary Footer */}
+            <div className="grid grid-cols-3 gap-0 bg-[#0A0E1A]">
+              <div className="p-6 border-r border-blue-500/10">
+                <div className="text-sm font-semibold text-gray-300">Detection Summary</div>
+              </div>
+              <div className="p-6 border-r border-blue-500/10 bg-red-950/20">
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-red-400">
+                    {currentCase.indicators.filter(i => i.traditional).length}/{currentCase.indicators.length}
+                  </div>
+                  <div className="text-xs text-gray-500 mt-1">indicators detected</div>
+                  <div className="text-xs text-red-400 mt-2 font-semibold">
+                    {Math.round((currentCase.indicators.filter(i => i.traditional).length / currentCase.indicators.length) * 100)}% detection rate
+                  </div>
+                </div>
+              </div>
+              <div className="p-6 bg-blue-950/20">
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-green-400">
+                    {currentCase.indicators.length}/{currentCase.indicators.length}
+                  </div>
+                  <div className="text-xs text-gray-500 mt-1">indicators detected</div>
+                  <div className="text-xs text-green-400 mt-2 font-semibold">
+                    100% detection rate
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Call to Action */}
+          <div className="text-center mt-12">
+            <p className="text-lg text-gray-400 mb-6">
+              Don't let fraud slip through the cracks. Veritas catches what traditional systems miss.
+            </p>
+            <a
+              href="#top"
+              className="inline-block bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 text-white font-semibold px-8 py-4 rounded-lg shadow-lg shadow-blue-500/50 transition-all"
+            >
+              See Veritas in Action
+            </a>
           </div>
         </div>
 
