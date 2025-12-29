@@ -12,6 +12,12 @@ class Settings(BaseSettings):
     # Redis
     redis_url: str = "redis://localhost:6379/0"
 
+    # Vector & Graph Databases
+    chroma_url: str = "http://localhost:8001"
+    neo4j_uri: str = "bolt://localhost:7687"
+    neo4j_user: str = "neo4j"
+    neo4j_password: str = "veritas_graph_pass"
+
     # LLM Configuration
     openai_api_key: str = ""
     anthropic_api_key: str = ""

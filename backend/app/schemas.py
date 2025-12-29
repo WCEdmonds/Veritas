@@ -171,6 +171,45 @@ class PDFMetadataOutput(BaseModel):
     is_manipulated: bool
 
 
+# Layer 5: Cross-Case Intelligence & Network Analysis
+class VectorSimilarityOutput(BaseModel):
+    """Output from Vector Similarity tool (plagiarism detection)."""
+    similar_cases_count: int
+    top_matches: List[dict]  # [{case_id, similarity_score, excerpt}]
+    is_plagiarized: bool  # True if similarity > threshold
+    plagiarism_score: float = Field(ge=0.0, le=1.0)
+    narrative_excerpt: str
+
+
+class JobBoardScraperOutput(BaseModel):
+    """Output from Job Board Scraper tool."""
+    total_job_postings: int
+    recent_postings_30d: int
+    recent_postings_90d: int
+    posting_platforms: List[str]  # ["indeed", "linkedin"]
+    is_actively_hiring: bool
+    growth_claim_verified: bool  # Matches claimed growth
+
+
+class EmployeeGhostCheckOutput(BaseModel):
+    """Output from Employee Ghost Check tool."""
+    total_employees_claimed: int
+    employees_verified: int
+    deceased_employees: int
+    duplicate_ssn_employees: int
+    ghost_employees: List[dict]  # [{name, ssn_last4, issue}]
+    verification_rate: float = Field(ge=0.0, le=1.0)
+
+
+class GraphNetworkOutput(BaseModel):
+    """Output from Graph Network Analysis tool."""
+    connected_entities_count: int
+    fraud_ring_detected: bool
+    shared_attributes: List[str]  # ["phone", "email", "address"]
+    related_cases: List[dict]  # [{case_id, relationship, shared_data}]
+    network_risk_score: int = Field(ge=0, le=100)
+
+
 # Legacy Tool Output Schemas (for backwards compatibility)
 class GoogleStreetViewOutput(BaseModel):
     """Output from Google Street View tool."""
