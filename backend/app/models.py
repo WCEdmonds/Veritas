@@ -11,6 +11,13 @@ import uuid
 from app.database import Base
 
 
+class CaseType(str, enum.Enum):
+    """Type of fraud investigation."""
+    GRANT = "GRANT"  # Business grant/loan fraud
+    UNEMPLOYMENT = "UNEMPLOYMENT"  # Unemployment insurance fraud
+    BENEFITS = "BENEFITS"  # General benefits fraud (SNAP, housing, etc.)
+
+
 class CaseStatus(str, enum.Enum):
     """Case processing status."""
     NEW = "NEW"
@@ -43,9 +50,24 @@ class Case(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     external_ref_id = Column(String(255), nullable=False, index=True)
+
+    # Case type and common fields
+    case_type = Column(SQLEnum(CaseType), default=CaseType.GRANT, index=True)
     applicant_name = Column(String(255))
-    applicant_tax_id = Column(String(50))
     applicant_address = Column(Text)
+
+    # Grant/Loan-specific fields
+    applicant_tax_id = Column(String(50))  # EIN for businesses
+
+    # Unemployment/Benefits-specific fields
+    applicant_ssn = Column(String(11))  # SSN for individuals (encrypted in production)
+    applicant_dob = Column(String(10))  # Date of birth (YYYY-MM-DD)
+    applicant_phone = Column(String(20))
+    applicant_email = Column(String(255))
+    previous_employer = Column(String(255))  # For unemployment claims
+    claim_amount = Column(Integer)  # Weekly benefit amount or grant amount
+
+    # Investigation results
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     status = Column(SQLEnum(CaseStatus), default=CaseStatus.NEW, index=True)
     final_risk_score = Column(Integer)  # 0-100

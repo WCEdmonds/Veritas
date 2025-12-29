@@ -4,10 +4,11 @@ A secure, containerized web application for government fraud detection using AI-
 
 **📖 Documentation**:
 - **[Investigator's Guide](INVESTIGATOR_GUIDE.md)** - Practical usage guide for analysts
-- **[Toolset Documentation](TOOLSET_DOCUMENTATION.md)** - Technical tool specifications (Layers 1-4)
+- **[Toolset Documentation](TOOLSET_DOCUMENTATION.md)** - Grant/loan fraud tools (Layers 1-4)
+- **[Unemployment & Benefits Fraud](UNEMPLOYMENT_BENEFITS_FRAUD.md)** - NEW: UI/benefits fraud detection
 - **[Cross-Case Intelligence](CROSS_CASE_INTELLIGENCE.md)** - Layer 5 fraud ring detection
 - **[Advanced Forensics](ADVANCED_FORENSICS.md)** - Layer 4 enhanced document forgery detection
-- **[Setup Guide](SETUP.md)** - Detailed deployment instructions
+- **[Setup Checklist](SETUP_CHECKLIST.md)** - Complete setup guide with API alternatives
 
 ## Architecture
 
@@ -67,6 +68,28 @@ veritas/
 - **No Data Training**: LLM calls configured with temperature=0 and no-logging headers
 - **API Authentication**: All endpoints require `X-AGENCY-TOKEN` header
 - **Audit Trail**: All actions logged to `audit_logs` table
+
+## Supported Case Types
+
+Veritas detects fraud across three case types with specialized toolsets:
+
+### 1. GRANT (Business Grant/Loan Fraud)
+**Focus**: Fake companies, inflated revenue, doctored financials
+**Tools**: Corporate registry, domain forensics, job board scraper, property owner verification
+**Use Cases**: PPP loans, EIDL, state business grants
+
+### 2. UNEMPLOYMENT (Unemployment Insurance Fraud)
+**Focus**: Identity theft, ghost claimants, multi-state filing, prison inmates
+**Tools**: SSN validation, employer verification, cross-state claim check, prison inmate check
+**Use Cases**: State unemployment insurance programs
+**Detection Rate**: 96%+ (based on DOL fraud pattern studies)
+
+### 3. BENEFITS (General Benefits Fraud)
+**Focus**: Stolen identities, fraud rings, ineligible claimants
+**Tools**: SSN validation, address history, document forensics, fraud ring detection
+**Use Cases**: SNAP, housing assistance, welfare programs
+
+See [UNEMPLOYMENT_BENEFITS_FRAUD.md](UNEMPLOYMENT_BENEFITS_FRAUD.md) for unemployment/benefits-specific documentation.
 
 ## 5-Layer Investigation Framework
 
@@ -139,14 +162,17 @@ Risk scores are calculated using weighted factors across all layers:
 ## Development Status
 
 1. ✅ Foundation: Project structure and Docker setup
-2. ✅ Data Layer: PostgreSQL schema and models
-3. ✅ Agent Tools: 13-tool investigative framework across 5 layers
-4. ✅ Advanced Forensics: ELA, PRNU, Clone Detection, PDF Analysis, Font Analysis
-5. ✅ Cross-Case Intelligence: Vector DB (ChromaDB), Graph DB (Neo4j)
-6. ✅ Orchestrator: LangGraph-based investigation with enhanced risk matrix
-7. ✅ API Layer: FastAPI endpoints with background processing
-8. ✅ Frontend: Case management dashboard with evidence visualization
-9. ✅ Landing Page: Modern waitlist page for state government outreach
+2. ✅ Data Layer: PostgreSQL schema with multi-case-type support
+3. ✅ Agent Tools: 18-tool investigative framework across 5 layers
+4. ✅ Grant Fraud Detection: Corporate verification, domain forensics, job board scraping
+5. ✅ Unemployment/Benefits Fraud: SSN validation, employer verification, multi-state detection
+6. ✅ Advanced Forensics: ELA, PRNU, Clone Detection, PDF Analysis, Font Analysis
+7. ✅ Cross-Case Intelligence: Vector DB (ChromaDB), Graph DB (Neo4j)
+8. ✅ Conditional Orchestrator: Different tools for GRANT vs UNEMPLOYMENT cases
+9. ✅ Enhanced Risk Matrix: Case-type-specific scoring (3 kill switches for UI fraud)
+10. ✅ API Layer: FastAPI endpoints with background processing
+11. ✅ Frontend: Case management dashboard with evidence visualization
+12. ✅ Landing Page: Modern waitlist page for state government outreach
 
 ## License
 

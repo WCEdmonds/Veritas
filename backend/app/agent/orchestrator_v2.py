@@ -22,7 +22,7 @@ from langgraph.graph import StateGraph, END
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.models import Case, EvidenceLog, VerificationSource, CaseStatus
+from app.models import Case, EvidenceLog, VerificationSource, CaseStatus, CaseType
 
 # Import all investigative tools
 from app.agent.physical import StreetViewVisionTool, PropertyOwnerTool
@@ -35,6 +35,13 @@ from app.agent.intelligence import (
     JobBoardScraperTool,
     EmployeeGhostCheckTool,
     GraphNetworkTool
+)
+from app.agent.unemployment import (
+    SSNValidationTool,
+    EmployerVerificationTool,
+    CrossStateClaimCheckTool,
+    PrisonInmateCheckTool,
+    AddressHistoryTool
 )
 
 
@@ -60,12 +67,19 @@ class EnhancedFraudInvestigationOrchestrator:
         "street_view_vision": StreetViewVisionTool,
         "property_owner": PropertyOwnerTool,
 
-        # Layer 2: Corporate
+        # Layer 2: Corporate (Grant/Loan fraud)
         "registry_status": RegistryStatusTool,
         "domain_forensics": DomainForensicsTool,
         "web_content_scraper": WebContentScraperTool,
 
-        # Layer 3: Identity
+        # Layer 2: Identity/Employment (Unemployment/Benefits fraud)
+        "ssn_validation": SSNValidationTool,
+        "employer_verification": EmployerVerificationTool,
+        "cross_state_claim_check": CrossStateClaimCheckTool,
+        "prison_inmate_check": PrisonInmateCheckTool,
+        "address_history": AddressHistoryTool,
+
+        # Layer 3: Identity (All case types)
         "phone_carrier": PhoneCarrierTool,
         "email_footprint": EmailDigitalFootprintTool,
         "breach_history": BreachHistoryTool,
@@ -157,50 +171,67 @@ class EnhancedFraudInvestigationOrchestrator:
 
     async def _planner_node(self, state: InvestigationState) -> InvestigationState:
         """
-        Planner: Selects comprehensive toolset for investigation.
+        Planner: Selects comprehensive toolset based on case type.
 
-        For MVP, we run all available tools to maximize signal collection.
+        Different tools for:
+        - GRANT: Business fraud detection (corporate, domain, employment verification)
+        - UNEMPLOYMENT/BENEFITS: Individual fraud detection (identity, SSN, employment history)
         """
         case_data = state["case_data"]
+        case_type = case_data.get("case_type", "GRANT")  # Default to GRANT for backwards compatibility
 
-        # Default comprehensive toolset
-        tools_to_run = [
-            "registry_status",      # Always check company registration
-            "street_view_vision",   # Always verify physical location
-        ]
+        tools_to_run = []
 
-        # Add domain forensics if we can extract domain
-        if case_data.get("applicant_name"):
-            tools_to_run.append("domain_forensics")
-            tools_to_run.append("web_content_scraper")
+        # === COMMON TOOLS (All Case Types) ===
 
-        # Add property owner check if address provided
+        # Layer 1: Physical verification (always relevant)
         if case_data.get("applicant_address"):
-            tools_to_run.append("property_owner")
+            tools_to_run.append("street_view_vision")  # Verify address exists/is residential vs commercial
 
-        # Add identity checks if available
-        # In a real system, these would come from additional case data
-        # For MVP, we'll include them with mock data
+        # Layer 3: Identity verification (always relevant)
         tools_to_run.extend([
-            "phone_carrier",
-            "email_footprint",
-            "breach_history",
+            "phone_carrier",      # VOIP detection
+            "email_footprint",    # Social media presence
+            "breach_history",     # Compromised credentials
         ])
 
-        # Add document forensics (would be triggered by uploaded docs)
-        tools_to_run.append("pdf_metadata")
-        tools_to_run.append("advanced_forensics")  # Advanced document forensics
+        # Layer 4: Document forensics (always relevant)
+        tools_to_run.append("pdf_metadata")          # Basic manipulation detection
+        tools_to_run.append("advanced_forensics")    # Advanced forgery detection
 
-        # Add Layer 5: Cross-Case Intelligence
+        # Layer 5: Cross-case intelligence (always relevant)
         tools_to_run.extend([
             "vector_similarity",     # Plagiarism detection
-            "job_board_scraper",     # Growth verification
             "employee_ghost_check",  # Death Master File
             "graph_network",         # Fraud ring detection
         ])
 
+        # === CASE TYPE-SPECIFIC TOOLS ===
+
+        if case_type == "GRANT":
+            # Business grant/loan fraud - focus on corporate verification
+            tools_to_run.extend([
+                "registry_status",      # Company formation date
+                "domain_forensics",     # Website age
+                "web_content_scraper",  # Lorem Ipsum detection
+                "property_owner",       # Related party transactions
+                "job_board_scraper",    # Growth verification via hiring
+            ])
+
+        elif case_type in ["UNEMPLOYMENT", "BENEFITS"]:
+            # Individual benefits fraud - focus on identity & employment
+            tools_to_run.extend([
+                "ssn_validation",           # SSN authenticity & Death Master File
+                "employer_verification",    # Verify previous employer
+                "cross_state_claim_check",  # Multi-state fraud detection
+                "prison_inmate_check",      # Incarceration check
+                "address_history",          # Fraud ring address detection
+            ])
+
         state["next_tools"] = tools_to_run
-        state["investigation_log"].append(f"Planner selected {len(tools_to_run)} tools for investigation")
+        state["investigation_log"].append(
+            f"Planner selected {len(tools_to_run)} tools for {case_type} investigation"
+        )
 
         return state
 
@@ -312,6 +343,44 @@ class EnhancedFraudInvestigationOrchestrator:
                 address=applicant_address,
                 ip_address="192.168.1.1"
             )
+        elif tool_name == "ssn_validation":
+            # In production, would come from case data
+            ssn = case_data.get("applicant_ssn", "123-45-6789")
+            dob = case_data.get("applicant_dob", "1980-01-01")
+            return tool.execute(ssn=ssn, name=applicant_name, dob=dob)
+        elif tool_name == "employer_verification":
+            # In production, would come from claim data
+            employer = case_data.get("previous_employer", "Acme Corporation")
+            ssn = case_data.get("applicant_ssn", "123-45-6789")
+            return tool.execute(
+                employer_name=employer,
+                claimant_name=applicant_name,
+                claimant_ssn=ssn,
+                claimed_termination_date="2024-01-15"
+            )
+        elif tool_name == "cross_state_claim_check":
+            ssn = case_data.get("applicant_ssn", "123-45-6789")
+            return tool.execute(
+                ssn=ssn,
+                name=applicant_name,
+                current_state="CA"
+            )
+        elif tool_name == "prison_inmate_check":
+            ssn = case_data.get("applicant_ssn", "123-45-6789")
+            dob = case_data.get("applicant_dob", "1980-01-01")
+            return tool.execute(
+                name=applicant_name,
+                dob=dob,
+                ssn=ssn,
+                state="CA"
+            )
+        elif tool_name == "address_history":
+            ssn = case_data.get("applicant_ssn", "123-45-6789")
+            return tool.execute(
+                current_address=applicant_address,
+                name=applicant_name,
+                ssn=ssn
+            )
 
         return None
 
@@ -404,6 +473,16 @@ class EnhancedFraudInvestigationOrchestrator:
             return f"Employees Verified: {result.employees_verified}/{result.total_employees_claimed}. Ghost Count: {len(result.ghost_employees)}"
         elif tool_name == "graph_network":
             return f"Connected Entities: {result.connected_entities_count}. Fraud Ring: {result.fraud_ring_detected}. Network Risk: {result.network_risk_score}"
+        elif tool_name == "ssn_validation":
+            return f"SSN: {result.ssn}. Valid: {result.is_valid}. Deceased: {result.is_deceased}. State: {result.state_issued}"
+        elif tool_name == "employer_verification":
+            return f"Employer: {result.employer_name}. Exists: {result.employer_exists}. Employment Verified: {result.employment_verified}"
+        elif tool_name == "cross_state_claim_check":
+            return f"States: {len(result.states_with_claims)}. Multi-State Fraud: {result.is_multi_state_fraud}. Concurrent Claims: {result.concurrent_claims}"
+        elif tool_name == "prison_inmate_check":
+            return f"Incarcerated: {result.is_incarcerated}. Facility: {result.facility_name if result.is_incarcerated else 'N/A'}"
+        elif tool_name == "address_history":
+            return f"Tenure: {result.address_tenure_days} days. Changes (6mo): {result.address_changes_6mo}. Fraud Ring Address: {result.is_fraud_ring_address}"
 
         return str(result)
 
@@ -510,6 +589,46 @@ class EnhancedFraudInvestigationOrchestrator:
                 if email.profile_count == 0:
                     risk_score += 15
                     risk_factors.append(f"Medium Risk: No social media presence")
+
+            # UNEMPLOYMENT/BENEFITS-SPECIFIC SCORING
+            if "ssn_validation" in tool_outputs:
+                ssn_result = tool_outputs["ssn_validation"]
+                if ssn_result.is_deceased:
+                    risk_score = 100  # KILL SWITCH: Ghost claimant
+                    risk_factors.append(f"CRITICAL: SSN belongs to deceased individual (ghost claimant)")
+                elif not ssn_result.is_valid:
+                    risk_score += 40
+                    risk_factors.append(f"High Risk: SSN validation failed - {', '.join(ssn_result.anomalies)}")
+
+            if "cross_state_claim_check" in tool_outputs:
+                cross_state = tool_outputs["cross_state_claim_check"]
+                if cross_state.is_multi_state_fraud:
+                    risk_score += 60
+                    risk_factors.append(f"CRITICAL: Multi-state fraud - {cross_state.concurrent_claims} concurrent claims in {len(cross_state.states_with_claims)} states")
+
+            if "prison_inmate_check" in tool_outputs:
+                inmate = tool_outputs["prison_inmate_check"]
+                if inmate.is_incarcerated:
+                    risk_score = 100  # KILL SWITCH: Ineligible claimant
+                    risk_factors.append(f"CRITICAL: Claimant is incarcerated at {inmate.facility_name}")
+
+            if "employer_verification" in tool_outputs:
+                employer = tool_outputs["employer_verification"]
+                if not employer.employer_exists:
+                    risk_score += 50
+                    risk_factors.append(f"CRITICAL: Previous employer does not exist - fake employment history")
+                elif not employer.employment_verified:
+                    risk_score += 35
+                    risk_factors.append(f"High Risk: Employment could not be verified in wage records")
+
+            if "address_history" in tool_outputs:
+                address = tool_outputs["address_history"]
+                if address.is_fraud_ring_address:
+                    risk_score += 50
+                    risk_factors.append(f"CRITICAL: Fraud ring address - {address.claims_at_address} claims at this location")
+                elif address.address_changes_6mo >= 5:
+                    risk_score += 25
+                    risk_factors.append(f"High Risk: Address hopping - {address.address_changes_6mo} moves in 6 months")
 
         # Cap at 100
         risk_score = min(risk_score, 100)
