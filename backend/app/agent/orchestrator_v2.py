@@ -1,11 +1,12 @@
 """
-Enhanced LangGraph-based Agent Orchestrator with 4-Layer Investigation.
+Enhanced LangGraph-based Agent Orchestrator with 5-Layer Investigation.
 
 Implements comprehensive fraud detection using:
 - Layer 1: Physical Verification
 - Layer 2: Corporate Verification
 - Layer 3: Digital Identity
-- Layer 4: Document Forensics
+- Layer 4: Document Forensics (Basic + Advanced)
+- Layer 5: Cross-Case Intelligence
 
 Uses sophisticated Risk Matrix scoring with weighted factors.
 """
@@ -28,6 +29,13 @@ from app.agent.physical import StreetViewVisionTool, PropertyOwnerTool
 from app.agent.corporate import RegistryStatusTool, DomainForensicsTool, WebContentScraperTool
 from app.agent.identity import PhoneCarrierTool, EmailDigitalFootprintTool, BreachHistoryTool
 from app.agent.forensics import PDFMetadataTool
+from app.agent.forensics_advanced import ForensicPipeline
+from app.agent.intelligence import (
+    VectorSimilarityTool,
+    JobBoardScraperTool,
+    EmployeeGhostCheckTool,
+    GraphNetworkTool
+)
 
 
 class InvestigationState(TypedDict):
@@ -62,13 +70,20 @@ class EnhancedFraudInvestigationOrchestrator:
         "email_footprint": EmailDigitalFootprintTool,
         "breach_history": BreachHistoryTool,
 
-        # Layer 4: Forensics
+        # Layer 4: Forensics (Basic)
         "pdf_metadata": PDFMetadataTool,
+
+        # Layer 5: Cross-Case Intelligence
+        "vector_similarity": VectorSimilarityTool,
+        "job_board_scraper": JobBoardScraperTool,
+        "employee_ghost_check": EmployeeGhostCheckTool,
+        "graph_network": GraphNetworkTool,
     }
 
     def __init__(self, db: Session):
         self.db = db
         self.llm = self._initialize_llm()
+        self.forensic_pipeline = ForensicPipeline()
         self.graph = self._build_graph()
 
     def _initialize_llm(self):
@@ -174,6 +189,15 @@ class EnhancedFraudInvestigationOrchestrator:
 
         # Add document forensics (would be triggered by uploaded docs)
         tools_to_run.append("pdf_metadata")
+        tools_to_run.append("advanced_forensics")  # Advanced document forensics
+
+        # Add Layer 5: Cross-Case Intelligence
+        tools_to_run.extend([
+            "vector_similarity",     # Plagiarism detection
+            "job_board_scraper",     # Growth verification
+            "employee_ghost_check",  # Death Master File
+            "graph_network",         # Fraud ring detection
+        ])
 
         state["next_tools"] = tools_to_run
         state["investigation_log"].append(f"Planner selected {len(tools_to_run)} tools for investigation")
@@ -257,6 +281,37 @@ class EnhancedFraudInvestigationOrchestrator:
         elif tool_name == "pdf_metadata":
             # In production, would analyze uploaded documents
             return tool.execute(document_path="/fake/bank_statement.pdf")
+        elif tool_name == "advanced_forensics":
+            # Run ForensicPipeline for advanced document analysis
+            return self.forensic_pipeline.analyze_document(
+                file_path="/fake/bank_statement.pdf",
+                file_type="auto"
+            )
+        elif tool_name == "vector_similarity":
+            # In production, would use actual application narrative
+            narrative = f"Application from {applicant_name} for business expansion grant"
+            return tool.execute(narrative_text=narrative, case_id=case_data.get("case_id", ""))
+        elif tool_name == "job_board_scraper":
+            # In production, would extract from application data
+            claimed_employees = 50
+            return tool.execute(company_name=applicant_name, claimed_employees=claimed_employees)
+        elif tool_name == "employee_ghost_check":
+            # In production, would use actual employee list
+            employee_list = [
+                {"name": "John Doe", "ssn_last4": "1234", "role": "Manager"}
+            ]
+            return tool.execute(employee_list=employee_list)
+        elif tool_name == "graph_network":
+            # In production, would extract from application data
+            phone = "555-0100"
+            email = f"contact@{applicant_name.lower().replace(' ', '')}.com"
+            return tool.execute(
+                case_id=case_data.get("case_id", ""),
+                phone=phone,
+                email=email,
+                address=applicant_address,
+                ip_address="192.168.1.1"
+            )
 
         return None
 
@@ -278,6 +333,11 @@ class EnhancedFraudInvestigationOrchestrator:
             "email_footprint": VerificationSource.LEXIS_NEXIS,
             "breach_history": VerificationSource.LEXIS_NEXIS,
             "pdf_metadata": VerificationSource.DOC_ANALYSIS,
+            "advanced_forensics": VerificationSource.DOC_ANALYSIS,
+            "vector_similarity": VerificationSource.DOC_ANALYSIS,
+            "job_board_scraper": VerificationSource.OPENCORPORATES,
+            "employee_ghost_check": VerificationSource.LEXIS_NEXIS,
+            "graph_network": VerificationSource.DOC_ANALYSIS,
         }
 
         source = source_mapping.get(tool_name, VerificationSource.DOC_ANALYSIS)
@@ -328,6 +388,22 @@ class EnhancedFraudInvestigationOrchestrator:
             return f"Breach Count: {result.breach_count}. Synthetic Identity Suspicion: {result.synthetic_identity_suspicion}"
         elif tool_name == "pdf_metadata":
             return f"Software: {result.software_tool}. Manipulated: {result.is_manipulated}"
+        elif tool_name == "advanced_forensics":
+            # Handle dict result from ForensicPipeline
+            if isinstance(result, dict):
+                forged = result.get("is_forged", False)
+                confidence = result.get("forgery_confidence", 0)
+                anomaly_count = len(result.get("anomalies", []))
+                return f"Forgery Detected: {forged}. Confidence: {confidence:.1f}%. Anomalies: {anomaly_count}"
+            return str(result)
+        elif tool_name == "vector_similarity":
+            return f"Plagiarism: {result.is_plagiarized}. Score: {result.plagiarism_score:.2f}. Similar Cases: {result.similar_cases_count}"
+        elif tool_name == "job_board_scraper":
+            return f"Job Postings: {result.total_job_postings}. Recent (30d): {result.recent_postings_30d}. Growth Verified: {result.growth_claim_verified}"
+        elif tool_name == "employee_ghost_check":
+            return f"Employees Verified: {result.employees_verified}/{result.total_employees_claimed}. Ghost Count: {len(result.ghost_employees)}"
+        elif tool_name == "graph_network":
+            return f"Connected Entities: {result.connected_entities_count}. Fraud Ring: {result.fraud_ring_detected}. Network Risk: {result.network_risk_score}"
 
         return str(result)
 
@@ -339,7 +415,8 @@ class EnhancedFraudInvestigationOrchestrator:
         - Layer 1 (Physical): 40 points max
         - Layer 2 (Corporate): 50 points max
         - Layer 3 (Identity): 25 points max
-        - Layer 4 (Forensics): KILL SWITCH (automatic 100)
+        - Layer 4 (Forensics): KILL SWITCH (automatic 100) + Advanced Forensics
+        - Layer 5 (Intelligence): 140 points max (fraud rings)
         """
         tool_outputs = state["tool_outputs"]
 
@@ -354,8 +431,47 @@ class EnhancedFraudInvestigationOrchestrator:
                 risk_score = 100
                 risk_factors.append(f"CRITICAL: Document manipulation detected ({pdf.software_tool})")
 
+        # LAYER 4: ADVANCED FORENSICS (KILL SWITCH)
+        if "advanced_forensics" in tool_outputs:
+            adv_forensics = tool_outputs["advanced_forensics"]
+            if isinstance(adv_forensics, dict):
+                if adv_forensics.get("is_forged", False):
+                    confidence = adv_forensics.get("forgery_confidence", 0)
+                    if confidence >= 80:
+                        risk_score = 100
+                        risk_factors.append(f"CRITICAL: Advanced forensics detected forgery ({confidence:.0f}% confidence)")
+                    elif confidence >= 50:
+                        risk_score += 40
+                        risk_factors.append(f"High Risk: Document forensics shows forgery indicators ({confidence:.0f}% confidence)")
+
         # Only continue scoring if not already killed
         if risk_score < 100:
+            # LAYER 5: CROSS-CASE INTELLIGENCE (FRAUD RINGS)
+            if "graph_network" in tool_outputs:
+                graph = tool_outputs["graph_network"]
+                if graph.fraud_ring_detected:
+                    risk_score += 50
+                    risk_factors.append(f"CRITICAL: Fraud ring detected ({graph.connected_entities_count} connected entities)")
+
+            if "vector_similarity" in tool_outputs:
+                vector = tool_outputs["vector_similarity"]
+                if vector.is_plagiarized and vector.plagiarism_score > 0.85:
+                    risk_score += 40
+                    risk_factors.append(f"High Risk: Plagiarized narrative (score: {vector.plagiarism_score:.2f})")
+
+            if "employee_ghost_check" in tool_outputs:
+                ghost = tool_outputs["employee_ghost_check"]
+                verification_rate = ghost.employees_verified / max(ghost.total_employees_claimed, 1)
+                if verification_rate < 0.70:
+                    risk_score += 30
+                    risk_factors.append(f"High Risk: Low employee verification rate ({verification_rate*100:.0f}%)")
+
+            if "job_board_scraper" in tool_outputs:
+                jobs = tool_outputs["job_board_scraper"]
+                if not jobs.growth_claim_verified and jobs.total_job_postings == 0:
+                    risk_score += 20
+                    risk_factors.append(f"Medium Risk: Growth claimed but no hiring activity")
+
             # LAYER 2: CORPORATE WEIGHTING
             if "domain_forensics" in tool_outputs:
                 domain = tool_outputs["domain_forensics"]
@@ -472,20 +588,56 @@ class EnhancedFraudInvestigationOrchestrator:
         # Detailed Evidence
         bluf += "\n## Evidence Summary\n\n"
 
+        # Layer 5: Cross-Case Intelligence
+        if "graph_network" in tool_outputs:
+            graph = tool_outputs["graph_network"]
+            if graph.fraud_ring_detected:
+                bluf += f"**FRAUD RING DETECTED**: {graph.connected_entities_count} connected entities sharing contact information. "
+                bluf += f"This application is part of a coordinated fraud operation.\n\n"
+
+        if "vector_similarity" in tool_outputs:
+            vector = tool_outputs["vector_similarity"]
+            if vector.is_plagiarized:
+                bluf += f"**PLAGIARISM DETECTED**: Application narrative matches {vector.similar_cases_count} previous applications "
+                bluf += f"(similarity: {vector.plagiarism_score*100:.0f}%). Indicates scripted fraud.\n\n"
+
+        if "employee_ghost_check" in tool_outputs:
+            ghost = tool_outputs["employee_ghost_check"]
+            if len(ghost.ghost_employees) > 0:
+                bluf += f"**GHOST EMPLOYEES**: {len(ghost.ghost_employees)} employees could not be verified. "
+                bluf += "Possible payroll fraud.\n\n"
+
+        # Layer 4: Document Forensics
+        if "advanced_forensics" in tool_outputs:
+            adv_forensics = tool_outputs["advanced_forensics"]
+            if isinstance(adv_forensics, dict) and adv_forensics.get("is_forged", False):
+                confidence = adv_forensics.get("forgery_confidence", 0)
+                anomaly_count = len(adv_forensics.get("anomalies", []))
+                bluf += f"**ADVANCED FORENSICS**: Document forgery detected ({confidence:.0f}% confidence, {anomaly_count} anomalies). "
+                bluf += "Sophisticated document manipulation identified.\n\n"
+
+        if "pdf_metadata" in tool_outputs:
+            pdf = tool_outputs["pdf_metadata"]
+            if pdf.is_manipulated:
+                bluf += f"**BASIC FORENSICS**: Evidence of manipulation using {pdf.software_tool}. "
+                bluf += "This is a critical fraud indicator.\n\n"
+
+        # Layer 2: Corporate
         if "registry_status" in tool_outputs:
             reg = tool_outputs["registry_status"]
             bluf += f"**Corporate Registration**: {reg.legal_name} incorporated on {reg.incorporation_date} "
             bluf += f"({reg.days_since_incorp} days ago). Status: {reg.status}.\n\n"
 
+        if "job_board_scraper" in tool_outputs:
+            jobs = tool_outputs["job_board_scraper"]
+            if not jobs.growth_claim_verified:
+                bluf += f"**Hiring Activity**: {jobs.total_job_postings} job postings found. "
+                bluf += "Growth claims could not be verified.\n\n"
+
+        # Layer 1: Physical
         if "street_view_vision" in tool_outputs:
             street = tool_outputs["street_view_vision"]
             bluf += f"**Physical Verification**: {street.description}\n\n"
-
-        if "pdf_metadata" in tool_outputs:
-            pdf = tool_outputs["pdf_metadata"]
-            if pdf.is_manipulated:
-                bluf += f"**DOCUMENT FORENSICS**: Evidence of manipulation using {pdf.software_tool}. "
-                bluf += "This is a critical fraud indicator.\n\n"
 
         # Recommendation
         bluf += f"\n## Recommendation\n\n"
