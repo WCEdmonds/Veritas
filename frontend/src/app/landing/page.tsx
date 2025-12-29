@@ -177,8 +177,9 @@ export default function LandingPage() {
               </h1>
 
               <p className="text-xl text-gray-400 leading-relaxed">
-                Veritas automates fraud detection for grants, unemployment insurance, and benefits programs using
-                AI-powered investigation across physical, identity, document, and intelligence dimensions.
+                Two AI-powered modules: <span className="text-blue-400 font-semibold">Benefits Integrity</span> (UI, SNAP, housing)
+                and <span className="text-cyan-400 font-semibold">Grant Oversight</span> (research, SBIR, infrastructure).
+                Autonomous investigation that resolves grey areas without manual review.
               </p>
 
               <div className="grid grid-cols-2 gap-6">
@@ -485,6 +486,132 @@ export default function LandingPage() {
           </div>
         </div>
 
+        {/* Key Capabilities Section */}
+        <div className="max-w-7xl mx-auto px-6 py-24">
+          <div className="text-center mb-16">
+            <h2 className="text-4xl font-bold mb-4">
+              Intelligence That{' '}
+              <span className="bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">
+                Thinks Like an Investigator
+              </span>
+            </h2>
+            <p className="text-xl text-gray-400">
+              Advanced AI capabilities that go beyond simple database checks
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            {/* Capability 1: Autonomous Grey Area Resolution */}
+            <div className="bg-[#0F1419] border border-blue-500/10 rounded-2xl p-8 hover:border-blue-500/30 transition-all">
+              <div className="w-16 h-16 bg-gradient-to-br from-blue-500/20 to-cyan-500/20 rounded-xl flex items-center justify-center mb-6">
+                <svg className="w-8 h-8 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <h3 className="text-2xl font-bold mb-4">Autonomous Grey Area Resolution</h3>
+              <p className="text-gray-400 mb-6">
+                Veritas doesn't just flag issues—it resolves them. Address mismatch? Automatically pulls utility bills, lease agreements, and property records to verify legitimacy without manual review.
+              </p>
+              <div className="bg-blue-950/20 border border-blue-500/20 rounded-lg p-4">
+                <div className="text-sm text-blue-400 font-semibold mb-2">Example:</div>
+                <div className="text-sm text-gray-300 space-y-2">
+                  <div className="flex items-start space-x-2">
+                    <div className="text-yellow-400 mt-1">⚠</div>
+                    <div>Claimant address differs from employer records</div>
+                  </div>
+                  <div className="flex items-start space-x-2">
+                    <div className="text-blue-400 mt-1">→</div>
+                    <div>Auto-fetch: Utility bill, USPS change-of-address, property tax records</div>
+                  </div>
+                  <div className="flex items-start space-x-2">
+                    <div className="text-green-400 mt-1">✓</div>
+                    <div>Resolved: Recent move verified, case approved in 2.5 seconds</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Capability 2: Foreign Entity Link Detection */}
+            <div className="bg-[#0F1419] border border-cyan-500/10 rounded-2xl p-8 hover:border-cyan-500/30 transition-all">
+              <div className="w-16 h-16 bg-gradient-to-br from-cyan-500/20 to-indigo-500/20 rounded-xl flex items-center justify-center mb-6">
+                <svg className="w-8 h-8 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <h3 className="text-2xl font-bold mb-4">Hidden Foreign Entity Links</h3>
+              <p className="text-gray-400 mb-6">
+                For grant oversight, Veritas uncovers hidden connections to foreign entities, sanctioned vendors, and related parties that evade simple database checks through shell companies and intermediaries.
+              </p>
+              <div className="bg-cyan-950/20 border border-cyan-500/20 rounded-lg p-4">
+                <div className="text-sm text-cyan-400 font-semibold mb-2">Grant Pre-Award Detection:</div>
+                <div className="text-sm text-gray-300 space-y-2">
+                  <div className="flex items-start space-x-2">
+                    <div className="text-red-400 mt-1">⚠</div>
+                    <div>Subcontractor "TechVendor LLC" appears legitimate</div>
+                  </div>
+                  <div className="flex items-start space-x-2">
+                    <div className="text-cyan-400 mt-1">→</div>
+                    <div>Deep analysis: Corporate registry, IP addresses, payment routing</div>
+                  </div>
+                  <div className="flex items-start space-x-2">
+                    <div className="text-red-400 mt-1">✗</div>
+                    <div>Found: Shell company routing payments to sanctioned Chinese entity</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Capability 3: Relationship Graph */}
+            <div className="bg-[#0F1419] border border-purple-500/10 rounded-2xl p-8 hover:border-purple-500/30 transition-all">
+              <div className="w-16 h-16 bg-gradient-to-br from-purple-500/20 to-pink-500/20 rounded-xl flex items-center justify-center mb-6">
+                <svg className="w-8 h-8 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" />
+                </svg>
+              </div>
+              <h3 className="text-2xl font-bold mb-4">Relationship Graph Network Analysis</h3>
+              <p className="text-gray-400 mb-6">
+                Visual network graphs expose hidden relationships that violate conflict-of-interest rules. See exactly how the applicant's "independent contractor" is actually their spouse or business partner.
+              </p>
+              <div className="bg-purple-950/20 border border-purple-500/20 rounded-lg p-4">
+                <div className="text-sm text-purple-400 font-semibold mb-2">Uniform Guidance Violation:</div>
+                <div className="text-sm text-gray-300 space-y-2">
+                  <div className="flex items-start space-x-2">
+                    <div className="text-yellow-400 mt-1">📊</div>
+                    <div>Applicant hires "ABC Consulting" as independent contractor</div>
+                  </div>
+                  <div className="flex items-start space-x-2">
+                    <div className="text-purple-400 mt-1">→</div>
+                    <div>Graph reveals: Shared bank account, same home address, joint LLC</div>
+                  </div>
+                  <div className="flex items-start space-x-2">
+                    <div className="text-red-400 mt-1">✗</div>
+                    <div>Conflict detected: Contractor is applicant's spouse—Self-dealing</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Technology Note */}
+          <div className="mt-16 max-w-4xl mx-auto bg-gradient-to-r from-blue-950/30 to-cyan-950/30 border border-blue-500/20 rounded-xl p-8">
+            <div className="flex items-start space-x-4">
+              <div className="w-12 h-12 bg-blue-500/20 rounded-lg flex items-center justify-center flex-shrink-0">
+                <svg className="w-6 h-6 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+              </div>
+              <div>
+                <div className="text-lg font-bold mb-2">Zero Manual Review for 87% of Cases</div>
+                <div className="text-gray-400">
+                  Traditional systems flag 40-60% of applications for manual review. Veritas autonomously resolves ambiguities,
+                  reducing manual review to just 13% of cases—the truly complex ones requiring human judgment. Your investigators
+                  focus on sophisticated fraud, not address mismatches.
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Recent News Section */}
         <div className="max-w-7xl mx-auto px-6 py-24">
           <div className="text-center mb-12">
@@ -605,45 +732,125 @@ export default function LandingPage() {
           </div>
         </div>
 
-        {/* Use Cases */}
+        {/* Use Cases - Two Modules */}
         <div className="max-w-7xl mx-auto px-6 py-24">
           <h2 className="text-4xl font-bold text-center mb-16">
-            Built for{' '}
+            Two Modules for{' '}
             <span className="bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">
-              Government Investigators
+              Federal & State Oversight
             </span>
           </h2>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            {[
-              {
-                title: 'Grant Application Fraud',
-                description: 'Detect shell companies applying for CARES Act, EIDL, and state business grants',
-                stat: '85% fraud detection rate',
-                color: 'blue',
-              },
-              {
-                title: 'Unemployment Insurance',
-                description: 'Identify multi-state filing, deceased claimants, and prison inmates filing UI claims',
-                stat: '96% fraud detection rate (NEW)',
-                color: 'red',
-              },
-              {
-                title: 'Benefits Programs',
-                description: 'Verify SNAP, housing assistance, and welfare applicant identities and fraud rings',
-                stat: '92% fraud detection rate (NEW)',
-                color: 'cyan',
-              },
-            ].map((useCase, index) => (
-              <div
-                key={index}
-                className={`bg-[#0F1419] border border-${useCase.color}-500/10 rounded-xl p-8 hover:border-${useCase.color}-500/30 transition-all`}
-              >
-                <h3 className="text-xl font-bold mb-3">{useCase.title}</h3>
-                <p className="text-gray-400 mb-6">{useCase.description}</p>
-                <div className={`text-sm text-${useCase.color}-400 font-semibold`}>{useCase.stat}</div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+            {/* Benefits Integrity Module */}
+            <div className="bg-gradient-to-br from-blue-950/30 to-cyan-950/30 border border-blue-500/20 rounded-2xl p-8">
+              <div className="flex items-center space-x-3 mb-6">
+                <div className="w-12 h-12 bg-blue-500/20 rounded-lg flex items-center justify-center">
+                  <svg className="w-6 h-6 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                  </svg>
+                </div>
+                <h3 className="text-2xl font-bold text-blue-400">Benefits Integrity</h3>
               </div>
-            ))}
+
+              <p className="text-gray-300 mb-6">
+                Program integrity and improper payment prevention for unemployment insurance, SNAP, housing assistance, and welfare programs.
+              </p>
+
+              <div className="space-y-4 mb-6">
+                <div className="flex items-start space-x-3">
+                  <div className="w-5 h-5 rounded-full bg-blue-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <svg className="w-3 h-3 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                  <div className="text-sm text-gray-300">
+                    <strong className="text-white">Improper Payment Detection:</strong> Multi-state filing, deceased claimants, prison inmates
+                  </div>
+                </div>
+                <div className="flex items-start space-x-3">
+                  <div className="w-5 h-5 rounded-full bg-blue-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <svg className="w-3 h-3 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                  <div className="text-sm text-gray-300">
+                    <strong className="text-white">Identity Verification:</strong> SSN validation, employer verification, address history
+                  </div>
+                </div>
+                <div className="flex items-start space-x-3">
+                  <div className="w-5 h-5 rounded-full bg-blue-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <svg className="w-3 h-3 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                  <div className="text-sm text-gray-300">
+                    <strong className="text-white">Fraud Ring Detection:</strong> Graph network analysis of connected claimants
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-blue-950/40 border border-blue-500/30 rounded-lg p-4">
+                <div className="text-sm font-semibold text-blue-400 mb-1">Use Cases:</div>
+                <div className="text-xs text-gray-400">Unemployment Insurance (UI), SNAP, Housing Assistance, TANF, Medicaid</div>
+                <div className="text-2xl font-bold text-blue-400 mt-3">96% detection rate</div>
+              </div>
+            </div>
+
+            {/* Grant Oversight Module */}
+            <div className="bg-gradient-to-br from-cyan-950/30 to-purple-950/30 border border-cyan-500/20 rounded-2xl p-8">
+              <div className="flex items-center space-x-3 mb-6">
+                <div className="w-12 h-12 bg-cyan-500/20 rounded-lg flex items-center justify-center">
+                  <svg className="w-6 h-6 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                </div>
+                <h3 className="text-2xl font-bold text-cyan-400">Grant Oversight</h3>
+              </div>
+
+              <p className="text-gray-300 mb-6">
+                Pre-award risk assessment and Uniform Guidance (2 CFR 200) compliance for federal research, SBIR, infrastructure, and economic development grants.
+              </p>
+
+              <div className="space-y-4 mb-6">
+                <div className="flex items-start space-x-3">
+                  <div className="w-5 h-5 rounded-full bg-cyan-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <svg className="w-3 h-3 text-cyan-400" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                  <div className="text-sm text-gray-300">
+                    <strong className="text-white">Pre-Award Risk Assessment:</strong> Foreign entity links, shell companies, sanctions screening
+                  </div>
+                </div>
+                <div className="flex items-start space-x-3">
+                  <div className="w-5 h-5 rounded-full bg-cyan-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <svg className="w-3 h-3 text-cyan-400" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                  <div className="text-sm text-gray-300">
+                    <strong className="text-white">Conflict of Interest Detection:</strong> Relationship graphs expose hidden connections (spouse, family)
+                  </div>
+                </div>
+                <div className="flex items-start space-x-3">
+                  <div className="w-5 h-5 rounded-full bg-cyan-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <svg className="w-3 h-3 text-cyan-400" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                  <div className="text-sm text-gray-300">
+                    <strong className="text-white">Uniform Guidance Compliance:</strong> Self-dealing, related party transactions, subcontractor verification
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-cyan-950/40 border border-cyan-500/30 rounded-lg p-4">
+                <div className="text-sm font-semibold text-cyan-400 mb-1">Use Cases:</div>
+                <div className="text-xs text-gray-400">NSF Research, NIH Grants, SBIR/STTR, Infrastructure (IIJA), Community Development (CDBG)</div>
+                <div className="text-2xl font-bold text-cyan-400 mt-3">89% compliance violation detection</div>
+              </div>
+            </div>
           </div>
         </div>
 

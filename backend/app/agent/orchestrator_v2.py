@@ -43,6 +43,11 @@ from app.agent.unemployment import (
     PrisonInmateCheckTool,
     AddressHistoryTool
 )
+from app.agent.grants import (
+    ForeignEntityLinkTool,
+    ConflictOfInterestTool,
+    UtilityBillVerificationTool
+)
 
 
 class InvestigationState(TypedDict):
@@ -79,6 +84,10 @@ class EnhancedFraudInvestigationOrchestrator:
         "prison_inmate_check": PrisonInmateCheckTool,
         "address_history": AddressHistoryTool,
 
+        # Layer 2: Grant Oversight (Pre-Award Risk Assessment)
+        "foreign_entity_link": ForeignEntityLinkTool,
+        "conflict_of_interest": ConflictOfInterestTool,
+
         # Layer 3: Identity (All case types)
         "phone_carrier": PhoneCarrierTool,
         "email_footprint": EmailDigitalFootprintTool,
@@ -92,6 +101,9 @@ class EnhancedFraudInvestigationOrchestrator:
         "job_board_scraper": JobBoardScraperTool,
         "employee_ghost_check": EmployeeGhostCheckTool,
         "graph_network": GraphNetworkTool,
+
+        # Autonomous Resolution Tools
+        "utility_bill_verification": UtilityBillVerificationTool,
     }
 
     def __init__(self, db: Session):
@@ -116,18 +128,20 @@ class EnhancedFraudInvestigationOrchestrator:
             )
 
     def _build_graph(self) -> StateGraph:
-        """Build the LangGraph state machine."""
+        """Build the LangGraph state machine with autonomous resolution."""
         workflow = StateGraph(InvestigationState)
 
         # Add nodes
         workflow.add_node("planner", self._planner_node)
         workflow.add_node("executor", self._executor_node)
+        workflow.add_node("auto_resolver", self._auto_resolver_node)  # NEW: Autonomous grey area resolution
         workflow.add_node("reporter", self._reporter_node)
 
-        # Define edges (simplified: no analyzer loop for MVP)
+        # Define edges
         workflow.set_entry_point("planner")
         workflow.add_edge("planner", "executor")
-        workflow.add_edge("executor", "reporter")
+        workflow.add_edge("executor", "auto_resolver")  # Auto-resolve ambiguities before final report
+        workflow.add_edge("auto_resolver", "reporter")
         workflow.add_edge("reporter", END)
 
         return workflow.compile()
@@ -209,13 +223,15 @@ class EnhancedFraudInvestigationOrchestrator:
         # === CASE TYPE-SPECIFIC TOOLS ===
 
         if case_type == "GRANT":
-            # Business grant/loan fraud - focus on corporate verification
+            # Grant Oversight - Pre-Award Risk Assessment & Uniform Guidance Compliance
             tools_to_run.extend([
-                "registry_status",      # Company formation date
-                "domain_forensics",     # Website age
-                "web_content_scraper",  # Lorem Ipsum detection
-                "property_owner",       # Related party transactions
-                "job_board_scraper",    # Growth verification via hiring
+                "registry_status",          # Company formation date
+                "domain_forensics",         # Website age
+                "web_content_scraper",      # Lorem Ipsum detection
+                "property_owner",           # Related party transactions
+                "job_board_scraper",        # Growth verification via hiring
+                "foreign_entity_link",      # Foreign entity links, sanctions screening
+                "conflict_of_interest",     # Relationship graph for self-dealing detection
             ])
 
         elif case_type in ["UNEMPLOYMENT", "BENEFITS"]:
@@ -381,6 +397,36 @@ class EnhancedFraudInvestigationOrchestrator:
                 name=applicant_name,
                 ssn=ssn
             )
+        elif tool_name == "foreign_entity_link":
+            # In production, extract from grant application
+            subcontractors = case_data.get("subcontractors", ["TechVendor LLC", "Research Support Inc"])
+            vendors = case_data.get("vendors", [])
+            return tool.execute(
+                applicant_name=applicant_name,
+                subcontractors=subcontractors,
+                vendors=vendors
+            )
+        elif tool_name == "conflict_of_interest":
+            # In production, extract from grant application
+            contractors = case_data.get("contractors", [
+                {"name": "ABC Consulting", "role": "Research support"}
+            ])
+            vendors = case_data.get("vendors", [])
+            return tool.execute(
+                applicant_name=applicant_name,
+                contractors=contractors,
+                vendors=vendors,
+                applicant_address=applicant_address,
+                applicant_tax_id=case_data.get("applicant_tax_id", "")
+            )
+        elif tool_name == "utility_bill_verification":
+            # This is called by auto_resolver, not executor
+            claimed_move_date = case_data.get("move_date", None)
+            return tool.execute(
+                address=applicant_address,
+                applicant_name=applicant_name,
+                claimed_move_date=claimed_move_date
+            )
 
         return None
 
@@ -483,8 +529,118 @@ class EnhancedFraudInvestigationOrchestrator:
             return f"Incarcerated: {result.is_incarcerated}. Facility: {result.facility_name if result.is_incarcerated else 'N/A'}"
         elif tool_name == "address_history":
             return f"Tenure: {result.address_tenure_days} days. Changes (6mo): {result.address_changes_6mo}. Fraud Ring Address: {result.is_fraud_ring_address}"
+        elif tool_name == "foreign_entity_link":
+            return f"Foreign Links: {result.has_foreign_links}. Sanctioned: {len(result.sanctioned_entities)}. Shell Companies: {result.shell_companies_detected}. Risk: {result.risk_score}"
+        elif tool_name == "conflict_of_interest":
+            return f"Conflicts: {len(result.conflicts_detected)}. Self-Dealing: {result.self_dealing}. Uniform Guidance Violations: {len(result.uniform_guidance_violations)}"
+        elif tool_name == "utility_bill_verification":
+            return f"Address Verified: {result.verified}. Status: {result.resolution_status}. Account Holder: {result.account_holder_name}"
 
         return str(result)
+
+    async def _auto_resolver_node(self, state: InvestigationState) -> InvestigationState:
+        """
+        Autonomous Grey Area Resolution Node.
+
+        Analyzes tool outputs for ambiguous findings ("grey areas") and automatically
+        resolves them by fetching additional evidence, preventing manual review.
+
+        Grey areas include:
+        - Address mismatches (verify with utility bills, USPS records)
+        - Employment date discrepancies (cross-check tax records)
+        - Name variations (check AKA, maiden names)
+        - Recent move indicators (verify legitimacy)
+
+        Goal: Reduce manual review from 40% to 13% of cases.
+        """
+        tool_outputs = state["tool_outputs"]
+        case_data = state["case_data"]
+
+        # Track grey areas that were resolved
+        resolutions = []
+
+        # GREY AREA 1: Address mismatch between application and employer records
+        address_mismatch_detected = False
+
+        # Check if address history shows recent moves
+        if "address_history" in tool_outputs:
+            addr_history = tool_outputs["address_history"]
+            # If moved recently (< 90 days), this could be legitimate
+            if addr_history.address_tenure_days < 90 and addr_history.address_changes_6mo <= 2:
+                address_mismatch_detected = True
+                state["investigation_log"].append("Grey area detected: Recent address change")
+
+        # Also check if property owner shows mismatch
+        if "property_owner" in tool_outputs and not address_mismatch_detected:
+            prop = tool_outputs["property_owner"]
+            applicant_name = case_data.get("applicant_name", "")
+            # If owner name doesn't match applicant (could be rental property)
+            if applicant_name.lower() not in prop.owner_name.lower():
+                address_mismatch_detected = True
+                state["investigation_log"].append("Grey area detected: Address not owned by applicant")
+
+        # AUTONOMOUS RESOLUTION: Verify with utility bills
+        if address_mismatch_detected:
+            state["investigation_log"].append("Auto-resolving: Fetching utility bills for address verification...")
+
+            # Execute utility bill verification tool
+            util_tool = UtilityBillVerificationTool()
+            util_result = await util_tool.execute(
+                address=case_data.get("applicant_address", ""),
+                applicant_name=case_data.get("applicant_name", ""),
+                claimed_move_date=case_data.get("move_date", None)
+            )
+
+            # Store result
+            state["tool_outputs"]["utility_bill_verification"] = util_result
+
+            # Log resolution
+            if util_result.resolution_status == "RESOLVED_LEGITIMATE":
+                resolutions.append(
+                    f"✓ Address mismatch RESOLVED: Utility bills confirm recent move. "
+                    f"Case automatically approved without manual review."
+                )
+                state["investigation_log"].append("Grey area resolved autonomously: Legitimate recent move")
+            elif util_result.resolution_status == "RESOLVED_FRAUDULENT":
+                resolutions.append(
+                    f"✗ Address mismatch CONFIRMED FRAUD: Utility bills show different account holder. "
+                    f"Case automatically denied."
+                )
+                state["investigation_log"].append("Grey area resolved autonomously: Fraudulent address claim")
+            else:
+                resolutions.append(
+                    f"⚠ Address mismatch requires manual review: Unable to verify utility bills"
+                )
+                state["investigation_log"].append("Grey area requires manual review: Cannot auto-resolve")
+
+        # GREY AREA 2: Employment verification partial match
+        # (In production, would check for employer name variations, subsidiaries, etc.)
+        if "employer_verification" in tool_outputs:
+            emp = tool_outputs["employer_verification"]
+            # If employer exists but employment not verified, could be data lag
+            if emp.employer_exists and not emp.employment_verified:
+                state["investigation_log"].append(
+                    "Grey area detected: Employer exists but wage records not found (could be recent termination)"
+                )
+                # In production: Auto-fetch state wage database, UI claim records
+                resolutions.append(
+                    f"⚠ Employment verification ambiguous: Employer exists but no wage match. "
+                    f"Recommended: Request termination letter from applicant."
+                )
+
+        # Store resolutions in state for reporter
+        state["auto_resolutions"] = resolutions
+
+        if resolutions:
+            state["investigation_log"].append(
+                f"Autonomous resolver processed {len(resolutions)} grey areas"
+            )
+        else:
+            state["investigation_log"].append(
+                "No grey areas detected - proceeding to final report"
+            )
+
+        return state
 
     async def _reporter_node(self, state: InvestigationState) -> InvestigationState:
         """
@@ -550,6 +706,47 @@ class EnhancedFraudInvestigationOrchestrator:
                 if not jobs.growth_claim_verified and jobs.total_job_postings == 0:
                     risk_score += 20
                     risk_factors.append(f"Medium Risk: Growth claimed but no hiring activity")
+
+            # LAYER 2: GRANT OVERSIGHT (Pre-Award Risk Assessment)
+            if "foreign_entity_link" in tool_outputs:
+                foreign = tool_outputs["foreign_entity_link"]
+                if foreign.sanctioned_entities:
+                    risk_score = 100  # KILL SWITCH: Sanctions violation
+                    risk_factors.append(
+                        f"CRITICAL: Sanctioned entity detected - {', '.join(foreign.sanctioned_entities)} "
+                        f"(OFAC violation)"
+                    )
+                elif foreign.has_foreign_links and foreign.risk_score >= 70:
+                    risk_score += 70
+                    risk_factors.append(
+                        f"CRITICAL: Foreign entity links detected - "
+                        f"{len(foreign.foreign_entities)} entities, {len(foreign.compliance_violations)} violations"
+                    )
+                elif foreign.shell_companies_detected:
+                    risk_score += 50
+                    risk_factors.append(f"High Risk: Shell company routing to foreign entity")
+
+            if "conflict_of_interest" in tool_outputs:
+                coi = tool_outputs["conflict_of_interest"]
+                if coi.self_dealing:
+                    risk_score += 90  # Serious Uniform Guidance violation
+                    risk_factors.append(
+                        f"CRITICAL: Self-dealing detected - "
+                        f"{len(coi.uniform_guidance_violations)} Uniform Guidance violations"
+                    )
+                elif coi.has_conflict:
+                    spouse_conflicts = [c for c in coi.conflicts_detected if c.relationship_type == "spouse"]
+                    if spouse_conflicts:
+                        risk_score += 75
+                        risk_factors.append(
+                            f"CRITICAL: Conflict of interest - contractor is applicant's spouse "
+                            f"(2 CFR 200.318(c)(2) violation)"
+                        )
+                    else:
+                        risk_score += 50
+                        risk_factors.append(
+                            f"High Risk: Related party transactions - {len(coi.conflicts_detected)} conflicts detected"
+                        )
 
             # LAYER 2: CORPORATE WEIGHTING
             if "domain_forensics" in tool_outputs:
@@ -648,12 +845,14 @@ class EnhancedFraudInvestigationOrchestrator:
             recommendation = "APPROVE"
 
         # Generate BLUF narrative
+        auto_resolutions = state.get("auto_resolutions", [])
         narrative = self._generate_bluf_narrative(
             state["case_data"],
             risk_score,
             risk_level,
             risk_factors,
-            tool_outputs
+            tool_outputs,
+            auto_resolutions
         )
 
         # Store verdict
@@ -675,7 +874,8 @@ class EnhancedFraudInvestigationOrchestrator:
         risk_score: int,
         risk_level: str,
         risk_factors: List[str],
-        tool_outputs: Dict[str, Any]
+        tool_outputs: Dict[str, Any],
+        auto_resolutions: List[str] = []
     ) -> str:
         """Generate Bottom Line Up Front (BLUF) narrative."""
         applicant = case_data.get("applicant_name", "Unknown Entity")
@@ -704,8 +904,48 @@ class EnhancedFraudInvestigationOrchestrator:
         if not risk_factors:
             bluf += "No significant fraud indicators detected.\n"
 
+        # Autonomous Resolutions (show grey areas that were auto-resolved)
+        if auto_resolutions:
+            bluf += "\n## Autonomous Resolutions\n\n"
+            bluf += "_The following ambiguities were automatically resolved without manual review:_\n\n"
+            for resolution in auto_resolutions:
+                bluf += f"- {resolution}\n"
+            bluf += "\n"
+
         # Detailed Evidence
         bluf += "\n## Evidence Summary\n\n"
+
+        # Grant Oversight: Foreign Entity Links & Conflict of Interest
+        if "foreign_entity_link" in tool_outputs:
+            foreign = tool_outputs["foreign_entity_link"]
+            if foreign.sanctioned_entities:
+                bluf += f"**OFAC SANCTIONS VIOLATION**: {len(foreign.sanctioned_entities)} sanctioned entities detected - "
+                bluf += f"{', '.join(foreign.sanctioned_entities)}. This is a federal law violation.\n\n"
+            elif foreign.has_foreign_links:
+                bluf += f"**FOREIGN ENTITY LINKS**: {len(foreign.foreign_entities)} foreign entity connections identified:\n"
+                for entity in foreign.foreign_entities[:3]:  # Show top 3
+                    bluf += f"- {entity.get('entity')} → {entity.get('country')} ({entity.get('type')})\n"
+                if foreign.compliance_violations:
+                    bluf += f"\nCompliance Violations:\n"
+                    for violation in foreign.compliance_violations[:3]:
+                        bluf += f"- {violation}\n"
+                bluf += "\n"
+
+        if "conflict_of_interest" in tool_outputs:
+            coi = tool_outputs["conflict_of_interest"]
+            if coi.self_dealing:
+                bluf += f"**SELF-DEALING (2 CFR 200 VIOLATION)**: Applicant has financial interest in contractors/vendors:\n"
+                for conflict in coi.conflicts_detected:
+                    bluf += f"- {conflict.entity2} ({conflict.relationship_type}): {', '.join(conflict.evidence[:2])}\n"
+                bluf += "\nUniform Guidance Violations:\n"
+                for violation in coi.uniform_guidance_violations:
+                    bluf += f"- {violation}\n"
+                bluf += "\n"
+            elif coi.has_conflict:
+                bluf += f"**CONFLICT OF INTEREST**: {len(coi.conflicts_detected)} related party transactions detected:\n"
+                for conflict in coi.conflicts_detected[:3]:
+                    bluf += f"- {conflict.entity1} ↔ {conflict.entity2} ({conflict.relationship_type}, {conflict.confidence*100:.0f}% confidence)\n"
+                bluf += "\n"
 
         # Layer 5: Cross-Case Intelligence
         if "graph_network" in tool_outputs:
