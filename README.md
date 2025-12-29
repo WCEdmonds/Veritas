@@ -2,6 +2,11 @@
 
 A secure, containerized web application for government fraud detection using AI-powered agent orchestration.
 
+**📖 Documentation**:
+- **[Investigator's Guide](INVESTIGATOR_GUIDE.md)** - Practical usage guide for analysts
+- **[Toolset Documentation](TOOLSET_DOCUMENTATION.md)** - Technical tool specifications
+- **[Setup Guide](SETUP.md)** - Detailed deployment instructions
+
 ## Architecture
 
 - **Frontend**: Next.js 14+ (App Router), TypeScript, Tailwind CSS, Shadcn/UI
