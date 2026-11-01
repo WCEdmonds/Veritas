@@ -153,12 +153,22 @@ class ForeignEntityLinkTool(BaseTool):
 
 
 class RelationshipOutput(BaseModel):
-    """Output from relationship analysis."""
+    """One detected relationship between the applicant side and a counterparty."""
     entity1: str
     entity2: str
-    relationship_type: str  # "spouse", "family", "business_partner", "shared_address", "shared_account"
-    confidence: float  # 0.0 to 1.0
+    relationship_type: str          # spouse, household, ownership_interest, officer_of, spouse_controlled_entity,
+                                    # indirect_ownership, common_control, operational_control, shell_cluster, ...
+    confidence: float               # posterior probability 0..1
     evidence: List[str] = Field(default_factory=list)
+    evidence_bits: float = 0.0      # total log-likelihood ratio (bits) behind the link
+    direct: bool = True             # False when the link runs through intermediaries
+    path: List[str] = Field(default_factory=list)          # entity names along the graph path
+    path_description: str = ""      # "Daniel Hale → is married to Jennifer Hale → is an officer of Northstar..."
+    signals: List[Dict[str, Any]] = Field(default_factory=list)   # per-signal breakdown (kind, bits, value)
+    indirect_ownership_percent: float = 0.0
+    immediate_family: bool = False
+    self_dealing: bool = False
+    band: str = "confirmed"         # confirmed | review
 
 
 class ConflictOfInterestOutput(BaseModel):
@@ -166,170 +176,161 @@ class ConflictOfInterestOutput(BaseModel):
     applicant_name: str
     has_conflict: bool
     conflicts_detected: List[RelationshipOutput] = Field(default_factory=list)
+    review_recommended: List[RelationshipOutput] = Field(default_factory=list)   # grey band: resolve before flagging
     self_dealing: bool = False
     related_party_transactions: List[str] = Field(default_factory=list)
     uniform_guidance_violations: List[str] = Field(default_factory=list)
     risk_score: int
+    relationship_graph: Dict[str, Any] = Field(default_factory=dict)   # nodes/edges for visualisation
+    entities_analyzed: int = 0
+    analysis_method: str = ""
 
 
 class ConflictOfInterestTool(BaseTool):
     """
-    Detects conflict of interest violations using relationship graph analysis.
+    Detects conflict of interest and self-dealing with probabilistic entity
+    resolution and graph link analysis (see app.agent.relationships).
 
-    Identifies:
-    - Spousal relationships (applicant's contractor is spouse)
-    - Family relationships (board members are relatives)
-    - Self-dealing (applicant awards contracts to own companies)
-    - Shared financial accounts (bank accounts, addresses)
+    Evidence used, strongest to weakest:
+    - Identical tax ID or bank account between applicant-side parties and a counterparty
+    - Officer / ownership overlap from corporate registries (with indirect ownership %)
+    - Marriage and household records
+    - Shared residential address, phone, email, private domain, device or IP
+    - Shared commercial address, incorporation timing, shell-cluster patterns
+    - Fuzzy name evidence (nicknames, Jaro-Winkler) weighted by surname frequency
 
-    Uses:
-    - Property records (shared addresses)
-    - Marriage/family records
-    - Corporate filings (LLCs with shared ownership)
-    - Bank account analysis
-    - Social media graph analysis
+    Each signal carries a log-likelihood ratio; signals are summed and combined
+    with a prior to produce a posterior probability.  Links above the report
+    threshold are returned as conflicts; links in the review band are returned
+    separately so the autonomous resolver can fetch more evidence instead of
+    sending the case straight to manual review.
 
-    Uniform Guidance (2 CFR 200) Compliance Check.
+    Uniform Guidance (2 CFR 200.112, 200.318(c)(1)-(2), 200.319) compliance check.
     """
 
     name = "ConflictOfInterestTool"
-    description = "Detect conflict of interest and self-dealing using relationship graph analysis"
+    description = "Detect conflict of interest and self-dealing using probabilistic relationship graph analysis"
+
+    def __init__(self, provider=None, prior_related: float = 0.02,
+                 report_threshold: float = 0.80, review_threshold: float = 0.35, max_hops: int = 3):
+        super().__init__()
+        from app.agent.relationships import MockRelationshipProvider, RelationshipEngine
+        self.provider = provider if provider is not None else MockRelationshipProvider()
+        self.engine = RelationshipEngine(self.provider, prior_related=prior_related,
+                                         report_threshold=report_threshold,
+                                         review_threshold=review_threshold, max_hops=max_hops)
 
     async def execute(
         self,
         applicant_name: str,
-        contractors: List[Dict[str, str]] = [],
-        vendors: List[Dict[str, str]] = [],
+        contractors: List[Dict[str, Any]] = [],
+        vendors: List[Dict[str, Any]] = [],
         applicant_address: str = "",
-        applicant_tax_id: str = ""
+        applicant_tax_id: str = "",
+        applicant_phone: str = "",
+        applicant_email: str = "",
+        applicant_website: str = "",
+        key_personnel: List[Dict[str, Any]] = [],
+        application_date: Optional[str] = None,
     ) -> ConflictOfInterestOutput:
         """
-        Analyzes relationships between applicant and contractors/vendors.
+        Analyze relationships between the applicant side and every contractor / vendor.
 
         Args:
-            applicant_name: Name of grant applicant
-            contractors: List of contractors ({"name": "ABC Consulting", "role": "Research support"})
-            vendors: List of vendors
-            applicant_address: Applicant's address for cross-reference
-            applicant_tax_id: Applicant's tax ID for corporate linkage
-
-        Returns:
-            ConflictOfInterestOutput with detected conflicts
+            applicant_name: Grant applicant organization
+            contractors / vendors: party dicts.  Recognised keys: name, role, address,
+                address_type, phone, email, website, tax_id/ein, officers, owners
+                ([{name, percent}]), registered_agent, incorporation_date, bank_routing,
+                bank_account, ip_addresses, device_ids, kind ("person"/"organization")
+            applicant_*: applicant identifiers for cross-matching
+            key_personnel: PI, co-PIs, officers: [{"name": "Daniel Hale", "role": "PI", ...}]
+            application_date: ISO date; used for incorporation-timing signals
         """
-        # In production: Query marriage records, property records, corporate filings,
-        # social graph databases
+        from app.agent.relationships import EntityRecord, entity_from_party
 
-        conflicts_detected = []
-        related_party_transactions = []
-        uniform_guidance_violations = []
-        self_dealing = False
+        applicant = EntityRecord(
+            name=applicant_name, kind="organization", role="applicant",
+            addresses=[applicant_address] if applicant_address else [],
+            tax_ids=[applicant_tax_id] if applicant_tax_id else [],
+            phones=[applicant_phone] if applicant_phone else [],
+            emails=[applicant_email] if applicant_email else [],
+            websites=[applicant_website] if applicant_website else [],
+            sources=["application"],
+        )
+        counterparties = [entity_from_party(p, "contractor") for p in contractors if p.get("name")] + \
+                         [entity_from_party(p, "vendor") for p in vendors if p.get("name")]
+        personnel = []
+        for p in key_personnel:
+            if p.get("name"):
+                rec = entity_from_party({**p, "kind": "person"}, "key_personnel")
+                personnel.append(rec)
+        role_lookup = {p.get("name", "").strip().lower(): p.get("role", "") for p in contractors + vendors}
 
-        applicant_lower = applicant_name.lower()
+        analysis = await self.engine.analyze(applicant, counterparties, personnel, application_date)
 
-        # Check all contractors and vendors
-        all_parties = contractors + vendors
+        def to_output(f) -> RelationshipOutput:
+            return RelationshipOutput(
+                entity1=f.path[0] if f.path else applicant_name,
+                entity2=f.counterparty,
+                relationship_type=f.relationship_type,
+                confidence=f.probability,
+                evidence=f.evidence,
+                evidence_bits=f.evidence_bits,
+                direct=f.direct,
+                path=f.path,
+                path_description=f.path_description,
+                signals=f.signals,
+                indirect_ownership_percent=f.indirect_ownership_percent,
+                immediate_family=f.immediate_family,
+                self_dealing=f.self_dealing,
+                band=f.band,
+            )
 
-        for party in all_parties:
-            party_name = party.get("name", "")
-            party_role = party.get("role", "contractor")
-            party_lower = party_name.lower()
+        conflicts = [to_output(f) for f in analysis.findings]
+        review = [to_output(f) for f in analysis.review_recommended]
 
-            # TRIGGER 1: Spouse detection (same last name, shared address)
-            if "spouse" in party_lower or "wife" in party_lower or "husband" in party_lower:
-                relationship = RelationshipOutput(
-                    entity1=applicant_name,
-                    entity2=party_name,
-                    relationship_type="spouse",
-                    confidence=0.95,
-                    evidence=[
-                        "Shared home address",
-                        "Joint bank account detected",
-                        "Marriage record found in county clerk database"
-                    ]
-                )
-                conflicts_detected.append(relationship)
-                uniform_guidance_violations.append(
-                    f"2 CFR 200.318(c)(2): Conflict of interest - {party_role} is applicant's spouse"
-                )
-                self_dealing = True
-                related_party_transactions.append(f"Contract to spouse ({party_name})")
+        uniform_guidance_violations: List[str] = []
+        related_party_transactions: List[str] = []
+        for f in analysis.findings:
+            role = role_lookup.get(f.counterparty.lower(), f.counterparty_role)
+            related_party_transactions.append(
+                f"{f.counterparty_role.title()} '{f.counterparty}' ({role}) is a related party: "
+                f"{f.relationship_type.replace('_', ' ')} at {f.probability*100:.0f}% confidence"
+            )
+            for cite in f.uniform_guidance:
+                if cite not in uniform_guidance_violations:
+                    uniform_guidance_violations.append(cite)
 
-            # TRIGGER 2: Family member detection
-            if any(keyword in party_lower for keyword in ["family", "brother", "sister", "son", "daughter", "parent"]):
-                relationship = RelationshipOutput(
-                    entity1=applicant_name,
-                    entity2=party_name,
-                    relationship_type="family",
-                    confidence=0.90,
-                    evidence=[
-                        "Shared last name",
-                        "Shared address in property records",
-                        "Social media connections indicate family relationship"
-                    ]
-                )
-                conflicts_detected.append(relationship)
-                uniform_guidance_violations.append(
-                    f"2 CFR 200.318(c)(2): Conflict of interest - {party_role} is family member"
-                )
-                related_party_transactions.append(f"Contract to family member ({party_name})")
+        self_dealing = any(f.self_dealing for f in analysis.findings)
+        immediate_family = any(f.immediate_family for f in analysis.findings)
+        has_conflict = bool(analysis.findings)
 
-            # TRIGGER 3: Business partner (shared LLC ownership)
-            if any(keyword in party_lower for keyword in ["partner", "llc", "joint"]):
-                if applicant_lower.split()[0] in party_lower or party_lower.split()[0] in applicant_lower:
-                    relationship = RelationshipOutput(
-                        entity1=applicant_name,
-                        entity2=party_name,
-                        relationship_type="business_partner",
-                        confidence=0.85,
-                        evidence=[
-                            "Shared LLC ownership in corporate filings",
-                            "Both listed as officers on joint venture",
-                            "Shared business bank account"
-                        ]
-                    )
-                    conflicts_detected.append(relationship)
-                    uniform_guidance_violations.append(
-                        f"2 CFR 200.318(c)(2): Self-dealing - applicant has ownership stake in {party_role}"
-                    )
-                    self_dealing = True
-                    related_party_transactions.append(f"Contract to co-owned entity ({party_name})")
-
-            # TRIGGER 4: Same address (fraud indicator)
-            if applicant_address and "same" in party_lower:
-                relationship = RelationshipOutput(
-                    entity1=applicant_name,
-                    entity2=party_name,
-                    relationship_type="shared_address",
-                    confidence=1.0,
-                    evidence=[
-                        f"Both entities registered at {applicant_address}",
-                        "Property records show same physical location"
-                    ]
-                )
-                conflicts_detected.append(relationship)
-                uniform_guidance_violations.append(
-                    f"Related party transaction - {party_role} shares address with applicant"
-                )
-
-        # Calculate risk score
+        # Risk score: strongest finding sets the floor, additional findings add a little.
         risk_score = 0
-        has_conflict = len(conflicts_detected) > 0
-
         if self_dealing:
-            risk_score = 90  # Self-dealing is serious Uniform Guidance violation
-        elif has_conflict and any(r.relationship_type in ["spouse", "family"] for r in conflicts_detected):
-            risk_score = 75  # Direct family conflict
+            risk_score = 90
+        elif immediate_family:
+            risk_score = 75
         elif has_conflict:
-            risk_score = 50  # Other related party transactions
+            top = analysis.findings[0].relationship_type
+            risk_score = 65 if top in {"common_control", "shell_cluster", "operational_control", "same_entity"} else 50
+        if has_conflict and len(analysis.findings) > 1:
+            risk_score = min(100, risk_score + 5 * (len(analysis.findings) - 1))
+        if not has_conflict and review:
+            risk_score = 25  # unresolved grey area; resolver should act before a human does
 
         return ConflictOfInterestOutput(
             applicant_name=applicant_name,
             has_conflict=has_conflict,
-            conflicts_detected=conflicts_detected,
+            conflicts_detected=conflicts,
+            review_recommended=review,
             self_dealing=self_dealing,
             related_party_transactions=related_party_transactions,
             uniform_guidance_violations=uniform_guidance_violations,
-            risk_score=risk_score
+            risk_score=risk_score,
+            relationship_graph=analysis.graph,
+            entities_analyzed=analysis.entity_count,
+            analysis_method=analysis.method,
         )
 
 

@@ -407,17 +407,32 @@ class EnhancedFraudInvestigationOrchestrator:
                 vendors=vendors
             )
         elif tool_name == "conflict_of_interest":
-            # In production, extract from grant application
-            contractors = case_data.get("contractors", [
-                {"name": "ABC Consulting", "role": "Research support"}
-            ])
-            vendors = case_data.get("vendors", [])
+            # Parties come from the grant application (budget justification, subaward list,
+            # key personnel).  When the submission carries none, fall back to the demo
+            # scenario that the mock relationship provider knows about.
+            contractors = case_data.get("contractors")
+            vendors = case_data.get("vendors")
+            key_personnel = case_data.get("key_personnel")
+            if not contractors and not vendors:
+                contractors = [
+                    {"name": "Northstar Analytics LLC", "role": "Data analysis subcontract"},
+                    {"name": "Front Range Statistical Consulting LLC", "role": "Statistical support"},
+                ]
+                vendors = [
+                    {"name": "Summit Field Services Inc", "role": "Field equipment"},
+                    {"name": "Dell Technologies Inc", "role": "Computing hardware"},
+                ]
+                key_personnel = key_personnel or [{"name": "Daniel Hale", "role": "Principal Investigator"}]
             return tool.execute(
                 applicant_name=applicant_name,
-                contractors=contractors,
-                vendors=vendors,
+                contractors=contractors or [],
+                vendors=vendors or [],
                 applicant_address=applicant_address,
-                applicant_tax_id=case_data.get("applicant_tax_id", "")
+                applicant_tax_id=case_data.get("applicant_tax_id", "") or "",
+                applicant_phone=case_data.get("applicant_phone", "") or "",
+                applicant_email=case_data.get("applicant_email", "") or "",
+                key_personnel=key_personnel or [],
+                application_date=case_data.get("application_date") or case_data.get("created_at"),
             )
         elif tool_name == "utility_bill_verification":
             # This is called by auto_resolver, not executor
@@ -467,6 +482,8 @@ class EnhancedFraudInvestigationOrchestrator:
             risk_flag = result.risk_flag
         elif hasattr(result, 'is_manipulated'):
             risk_flag = result.is_manipulated
+        elif hasattr(result, 'has_conflict'):
+            risk_flag = result.has_conflict
 
         # Generate finding text
         finding = self._generate_finding_text(tool_name, result)
@@ -532,7 +549,13 @@ class EnhancedFraudInvestigationOrchestrator:
         elif tool_name == "foreign_entity_link":
             return f"Foreign Links: {result.has_foreign_links}. Sanctioned: {len(result.sanctioned_entities)}. Shell Companies: {result.shell_companies_detected}. Risk: {result.risk_score}"
         elif tool_name == "conflict_of_interest":
-            return f"Conflicts: {len(result.conflicts_detected)}. Self-Dealing: {result.self_dealing}. Uniform Guidance Violations: {len(result.uniform_guidance_violations)}"
+            text = (f"Related parties: {len(result.conflicts_detected)} confirmed, "
+                    f"{len(result.review_recommended)} need verification. Self-Dealing: {result.self_dealing}. "
+                    f"Entities analyzed: {result.entities_analyzed}.")
+            if result.conflicts_detected:
+                top = result.conflicts_detected[0]
+                text += f" Strongest link: {top.path_description} ({top.confidence*100:.0f}%, {top.evidence_bits:.0f} bits of evidence)."
+            return text
         elif tool_name == "utility_bill_verification":
             return f"Address Verified: {result.verified}. Status: {result.resolution_status}. Account Holder: {result.account_holder_name}"
 
@@ -577,8 +600,27 @@ class EnhancedFraudInvestigationOrchestrator:
             return state
 
         # Extract grey areas and suggested resolutions
-        grey_areas = grey_area_analysis.get("grey_areas", [])
+        grey_areas = list(grey_area_analysis.get("grey_areas", []))
         state["investigation_log"].append(f"LLM Analysis: {len(grey_areas)} grey areas identified")
+
+        # Deterministic grey areas: relationship links that scored in the review band.
+        # These are handed to the resolver with the exact pair and the exact check needed,
+        # independent of whether the LLM noticed them.
+        coi = tool_outputs.get("conflict_of_interest")
+        if coi is not None and getattr(coi, "review_recommended", None):
+            for item in coi.review_recommended:
+                issue = f"Possible undisclosed relationship: {item.path_description} ({item.confidence*100:.0f}%)"
+                if not any(g.get("issue") == issue for g in grey_areas):
+                    grey_areas.append({
+                        "issue": issue,
+                        "severity": "medium",
+                        "suggested_check": "Pull vital records (marriage/household) and property records for the two "
+                                           "individuals; confirm or clear the link before human review",
+                        "tool_to_use": "relationship_verification",
+                        "entity1": item.path[0] if item.path else coi.applicant_name,
+                        "entity2": item.entity2,
+                        "evidence": item.evidence,
+                    })
 
         resolutions = []
 
@@ -625,6 +667,20 @@ class EnhancedFraudInvestigationOrchestrator:
                         "status": "MANUAL_REVIEW_REQUIRED",
                         "message": f"⚠ {issue} requires manual review: Unable to auto-resolve"
                     })
+
+            elif tool_to_use == "relationship_verification":
+                # A relationship scored in the review band (soft evidence only: shared
+                # surname, timing, registered agent).  Without a vital-records or property
+                # provider we cannot honestly clear or confirm it, so we route it to the
+                # investigator with the specific pair and the specific check needed.
+                state["investigation_log"].append(f"Relationship verification needed: {suggested_check}")
+                resolutions.append({
+                    "issue": issue,
+                    "status": "MANUAL_REVIEW_REQUIRED",
+                    "message": (f"⚠ {issue}. Evidence: {'; '.join(grey_area.get('evidence', [])[:2])}. "
+                                f"Next check: {suggested_check}. Request a 2 CFR 200.112 conflict-of-interest "
+                                f"disclosure from the applicant naming {grey_area.get('entity2', 'the counterparty')}.")
+                })
 
             elif tool_to_use == "employer_verification_extended":
                 # Employment-related grey area - check subsidiaries, DBA names
@@ -871,25 +927,32 @@ Return JSON:
 
             if "conflict_of_interest" in tool_outputs:
                 coi = tool_outputs["conflict_of_interest"]
+                family = [c for c in coi.conflicts_detected if c.immediate_family]
                 if coi.self_dealing:
-                    risk_score += 90  # Serious Uniform Guidance violation
+                    risk_score += 90  # Financial interest in a counterparty: 2 CFR 200.318(c)(1)
+                    top = next((c for c in coi.conflicts_detected if c.self_dealing), coi.conflicts_detected[0])
                     risk_factors.append(
-                        f"CRITICAL: Self-dealing detected - "
-                        f"{len(coi.uniform_guidance_violations)} Uniform Guidance violations"
+                        f"CRITICAL: Self-dealing - {top.path_description} "
+                        f"({top.confidence*100:.0f}% confidence; 2 CFR 200.318(c)(1))"
+                    )
+                elif family:
+                    risk_score += 75
+                    risk_factors.append(
+                        f"CRITICAL: Conflict of interest - {family[0].path_description} "
+                        f"(immediate family member; 2 CFR 200.318(c)(1))"
                     )
                 elif coi.has_conflict:
-                    spouse_conflicts = [c for c in coi.conflicts_detected if c.relationship_type == "spouse"]
-                    if spouse_conflicts:
-                        risk_score += 75
-                        risk_factors.append(
-                            f"CRITICAL: Conflict of interest - contractor is applicant's spouse "
-                            f"(2 CFR 200.318(c)(2) violation)"
-                        )
-                    else:
-                        risk_score += 50
-                        risk_factors.append(
-                            f"High Risk: Related party transactions - {len(coi.conflicts_detected)} conflicts detected"
-                        )
+                    risk_score += 50
+                    risk_factors.append(
+                        f"High Risk: Related party transactions - {len(coi.conflicts_detected)} undisclosed "
+                        f"relationships ({coi.conflicts_detected[0].relationship_type.replace('_', ' ')})"
+                    )
+                elif coi.review_recommended:
+                    risk_score += 15
+                    risk_factors.append(
+                        f"Grey Area: {len(coi.review_recommended)} possible relationship(s) below confirmation "
+                        f"threshold - verification pending"
+                    )
 
             # LAYER 2: CORPORATE WEIGHTING
             if "domain_forensics" in tool_outputs:
@@ -1076,18 +1139,26 @@ Return JSON:
 
         if "conflict_of_interest" in tool_outputs:
             coi = tool_outputs["conflict_of_interest"]
-            if coi.self_dealing:
-                bluf += f"**SELF-DEALING (2 CFR 200 VIOLATION)**: Applicant has financial interest in contractors/vendors:\n"
-                for conflict in coi.conflicts_detected:
-                    bluf += f"- {conflict.entity2} ({conflict.relationship_type}): {', '.join(conflict.evidence[:2])}\n"
-                bluf += "\nUniform Guidance Violations:\n"
-                for violation in coi.uniform_guidance_violations:
-                    bluf += f"- {violation}\n"
+            if coi.has_conflict:
+                heading = "SELF-DEALING (2 CFR 200.318(c)(1))" if coi.self_dealing else "UNDISCLOSED RELATED PARTIES"
+                bluf += f"**{heading}**: {len(coi.conflicts_detected)} counterpart{'y' if len(coi.conflicts_detected) == 1 else 'ies'} "
+                bluf += f"linked to the applicant side across {coi.entities_analyzed} entities analyzed:\n"
+                for conflict in coi.conflicts_detected[:4]:
+                    own = f", {conflict.indirect_ownership_percent:.0f}% indirect ownership" if conflict.indirect_ownership_percent else ""
+                    bluf += (f"- **{conflict.entity2}** ({conflict.relationship_type.replace('_', ' ')}, "
+                             f"{conflict.confidence*100:.0f}% confidence, {conflict.evidence_bits:.0f} bits of evidence{own})\n")
+                    bluf += f"  - Path: {conflict.path_description}\n"
+                    for line in conflict.evidence[:3]:
+                        bluf += f"  - {line}\n"
+                if coi.uniform_guidance_violations:
+                    bluf += "\nUniform Guidance provisions implicated:\n"
+                    for violation in coi.uniform_guidance_violations:
+                        bluf += f"- {violation}\n"
                 bluf += "\n"
-            elif coi.has_conflict:
-                bluf += f"**CONFLICT OF INTEREST**: {len(coi.conflicts_detected)} related party transactions detected:\n"
-                for conflict in coi.conflicts_detected[:3]:
-                    bluf += f"- {conflict.entity1} ↔ {conflict.entity2} ({conflict.relationship_type}, {conflict.confidence*100:.0f}% confidence)\n"
+            if coi.review_recommended:
+                bluf += f"**RELATIONSHIPS NEEDING VERIFICATION** ({len(coi.review_recommended)}): evidence is suggestive but not conclusive.\n"
+                for item in coi.review_recommended[:3]:
+                    bluf += f"- {item.path_description} ({item.confidence*100:.0f}%): {'; '.join(item.evidence[:2])}\n"
                 bluf += "\n"
 
         # Layer 5: Cross-Case Intelligence

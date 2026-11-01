@@ -8,6 +8,7 @@ import { formatDate, getRiskColor, getRiskLevel } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import RelationshipGraph from '@/components/RelationshipGraph';
 
 export default function CaseDetailPage() {
   const params = useParams();
@@ -232,6 +233,25 @@ export default function CaseDetailPage() {
                       alt="Street View"
                       className="rounded border max-w-full h-auto"
                     />
+                  </div>
+                )}
+
+                {/* Relationship graph (conflict-of-interest tool) */}
+                {evidence.raw_data?.relationship_graph?.nodes?.length > 0 && (
+                  <div className="mb-3 border rounded bg-white p-2">
+                    <p className="text-xs font-semibold text-gray-600 mb-1">Relationship Graph</p>
+                    <RelationshipGraph data={evidence.raw_data.relationship_graph} />
+                    {Array.isArray(evidence.raw_data?.conflicts_detected) && evidence.raw_data.conflicts_detected.length > 0 && (
+                      <ul className="mt-2 space-y-1 text-xs text-gray-700">
+                        {evidence.raw_data.conflicts_detected.map((c: any, idx: number) => (
+                          <li key={idx}>
+                            <span className="font-medium">{c.path_description}</span>
+                            {' '}· {(c.confidence * 100).toFixed(0)}% · {c.evidence_bits} bits
+                            {c.indirect_ownership_percent ? ` · ${c.indirect_ownership_percent}% indirect ownership` : ''}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </div>
                 )}
 
