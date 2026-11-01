@@ -49,8 +49,10 @@ counterparty pairs are related) to produce a posterior probability.
 | Same residential address | 12.0 | |
 | Same address incl. unit | 9.2 | Commercial |
 | Same private email domain | 9.5 | |
+| Same full name, one side has no identifiers to check | 6.9 | Soft: routes to review, never confirms |
 | Shared surname | 4.8 to 6.0 | Weighted by surname frequency: Smith scores lower than Hale |
-| Same building, different unit | 5.6 | Multi-tenant |
+| Same building, different unit | 4.3 | Multi-tenant; related parties usually share the suite |
+| Same full name, disjoint addresses and phones | 3.9 | Probably two people |
 | Formed within 90 days of application | 2.3 | Applicant-counterparty pairs only |
 | Same registered agent | 2.3 | Nearly meaningless alone |
 | Same registered-agent / mail-drop address | 2.6 | Discounted because thousands of companies share it |
@@ -107,9 +109,100 @@ master for bank account hashes. With no provider at all the engine still links
 parties on whatever the application itself contains (addresses, phones, EINs,
 disclosed owners).
 
+## Identity resolution rules
+
+Most false accusations in relationship analysis come from merging two people
+who share a name. The engine therefore:
+
+- resolves nicknames and initials but treats an initial-only match ("S. Ibarra" vs "Samuel Ibarra") as soft evidence;
+- keeps same-named people as separate nodes when their addresses, phones and emails are disjoint;
+- refuses to merge an applicant-side person who has no identifiers with a same-named record found through a counterparty's household or officer list;
+- passes the listing company's address to the provider as a disambiguation hint, and expects the provider to return nothing rather than guess when the hint does not settle the question;
+- once a company's officer or a person's spouse has been resolved to one node, blocks a different same-named node from inheriting that link by name.
+
+## Testing and calibration without licensed data
+
+Code: `backend/benchmarks/synthetic.py`, `backend/benchmarks/estimate_u.py`,
+`backend/benchmarks/weights/`, `backend/tests/test_benchmarks.py`.
+
+### Synthetic ground-truth benchmark
+
+`benchmarks.synthetic` generates households, people and companies, builds grant
+cases, plants six positive patterns (spouse-owned contractor, nickname disguise,
+holding-company chain, straw owner, PI as officer, home-based shell) and four
+negatives (surname coincidence, same building, same registered agent, clean),
+adds realistic noise (nicknames, initials, honorifics, address formats, ZIP+4,
+legal-suffix variants), runs the engine through a provider over the synthetic
+world, and scores the result against the planted truth.
+
+Results, 200 cases per run, roughly 900 counterparties each:
+
+| Configuration | Precision | Recall | F1 | False-positive rate |
+|---|---|---|---|---|
+| Full registry and vital records, seed 7 | 1.000 | 0.980 | 0.990 | 0.000 |
+| Same, seed 11 | 0.988 | 0.968 | 0.978 | 0.010 |
+| No marriage or household records | 1.000 | 0.972 | 0.986 | 0.000 |
+| Provider finds only 60% of entities | 1.000 | 0.633 | 0.775 | 0.000 |
+
+Per pattern (seed 7): every positive pattern is confirmed at 97% or better,
+indirect ownership percentages are recovered within a few points, 100% of
+surname-only coincidences are routed to review rather than confirmed, and 95%
+of same-building tenants and 94% of same-agent companies are correctly ignored.
+The 60% coverage row is the important one for planning: the engine's recall is
+bounded by data coverage, not by the algorithm, which is why the provider
+connectors and agency data access matter more than further tuning.
+
+The benchmark found and fixed six real engine defects before any live data was
+touched: full-name collisions merging strangers, "Michael" fuzzy-matching
+"Michelle", initials matching any name, near-identical org names counted as
+hard evidence, two-word company names classified as people, and name-only
+inheritance of resolved spouse and officer links.
+
+```
+cd backend
+python -m benchmarks.synthetic --cases 200 --seed 7
+python -m benchmarks.synthetic --no-vital-records
+python -m benchmarks.synthetic --coverage 0.6
+python -m benchmarks.synthetic --weights benchmarks/weights/colorado_sos_2026-11.json
+```
+
+### Coincidence rates measured from a real registry
+
+`benchmarks.estimate_u` measures the u probabilities, how often two unrelated
+parties share an identifier by chance, with no labels: the exact collision rate
+across record pairs in a public corporate registry. It ships with a fetcher for
+the Colorado Secretary of State open dataset and a generic CSV loader for any
+other state.
+
+Measured on 150,000 Colorado entities in good standing, pairs conditioned on
+the same city:
+
+| Signal | u assumed | u measured | Bits assumed | Bits measured |
+|---|---|---|---|---|
+| Same address incl. unit | 0.001 | 0.00051 | 9.2 | 10.2 |
+| Same building, different unit | 0.01 | 0.00026 | 4.3 | 9.6 |
+| Same registered agent | 0.08 | 0.0024 | 2.3 | 7.4 |
+| Same formation date | 0.003 | 0.00024 | 7.6 | 11.3 |
+| Formed same month | 0.03 | 0.0045 | 3.9 | 6.6 |
+| Shared surname (agent individuals) | 0.004 | 0.00077 | 6.0 | 8.4 |
+
+It also found 47 buildings hosting 50 or more entities each (1500 N Grant St in
+Denver alone hosts 457), which feed the provider's registered-agent address
+list, and a surname frequency table from 60,000 individual agents that broadly
+agrees with the engine's built-in one.
+
+The measured file is saved as `backend/benchmarks/weights/colorado_sos_2026-11.json`
+and loads with `load_weights()` or `ConflictOfInterestTool(weights_path=...)`.
+
+### What the calibration does not settle
+
+- **Context.** A registry-wide collision rate answers "two random Colorado companies". The pairs Veritas compares sit on one application and are chosen by one applicant, so coincidences are more common than the registry suggests. Conditioning on city narrows the gap. Running the calibrated weights on the synthetic benchmark leaves precision and recall unchanged but routes every same-building and same-agent pair to review, which is more records pulls than an investigator would want. The shipped defaults are therefore kept deliberately conservative for those two signals. The right u for them should be measured on real co-application pairs, for which USAspending.gov subaward files are the free source.
+- **m values.** Registries say nothing about how often related parties share an identifier. Those need labelled or expectation-maximisation estimates, which the benchmark harness is built to accept once an agency pilot produces adjudicated cases.
+- **Synthetic realism.** The synthetic world uses a small given-name vocabulary and more concentrated surnames than a real population, so it over-produces exact full-name collisions. That makes it a stress test for identity resolution, not an estimate of real-world false-positive rates.
+
 ## Running the tests
 
 ```
 cd backend
-python -m pytest tests/test_relationships.py -q
+python -m pytest tests -q
 ```

@@ -1,0 +1,80 @@
+{
+  "same_address": {
+    "m": 0.6,
+    "u": 0.00050991
+  },
+  "same_building": {
+    "m": 0.5,
+    "u": 0.00025496
+  },
+  "same_registered_agent": {
+    "m": 0.4,
+    "u": 0.00242326
+  },
+  "same_incorporation_date": {
+    "m": 0.6,
+    "u": 0.00023856
+  },
+  "incorporated_same_month": {
+    "m": 0.45,
+    "u": 0.00454321
+  },
+  "same_org_name": {
+    "m": 0.9,
+    "u": 2.09e-06
+  },
+  "shared_surname": {
+    "m": 0.25,
+    "u": 0.00076803
+  },
+  "officer_shares_surname": {
+    "m": 0.25,
+    "u": 0.00076803
+  },
+  "_meta": {
+    "records": 149940,
+    "note": "u measured as exact-collision rate over all record pairs; m left at default"
+  },
+  "_surname_frequency": {
+    "smith": 0.00706,
+    "johnson": 0.00628,
+    "miller": 0.00514,
+    "brown": 0.00409,
+    "anderson": 0.00338,
+    "jones": 0.00334,
+    "davis": 0.00294,
+    "wilson": 0.00276,
+    "williams": 0.00266,
+    "thompson": 0.00229,
+    "martin": 0.00218,
+    "moore": 0.00217,
+    "thomas": 0.00217,
+    "nelson": 0.00215,
+    "taylor": 0.00215,
+    "lee": 0.00181,
+    "white": 0.00172,
+    "clark": 0.00171,
+    "peterson": 0.00171,
+    "young": 0.00161,
+    "martinez": 0.0016,
+    "hill": 0.00156,
+    "wright": 0.00147,
+    "walker": 0.00145,
+    "jackson": 0.00143,
+    "lewis": 0.00143,
+    "adams": 0.00141,
+    "king": 0.0014,
+    "campbell": 0.00138,
+    "scott": 0.00135,
+    "robinson": 0.00133,
+    "carlson": 0.00132,
+    "harris": 0.00132,
+    "murphy": 0.00125,
+    "hall": 0.00125,
+    "cook": 0.00125,
+    "kelly": 0.00124,
+    "morris": 0.00121,
+    "evans": 0.0012,
+    "roberts": 0.0012
+  }
+}

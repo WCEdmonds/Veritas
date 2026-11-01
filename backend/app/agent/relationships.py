@@ -340,7 +340,8 @@ def given_names_match(a: str, b: str) -> bool:
         return True
     if len(a) == 1 or len(b) == 1:
         return a[0] == b[0]
-    return jaro_winkler(fa, fb) >= 0.92
+    # 0.95 tolerates a transposed letter but keeps Michael/Michelle, Marion/Marian apart.
+    return jaro_winkler(fa, fb) >= 0.95
 
 
 def same_person_score(a: PersonName, b: PersonName) -> float:
@@ -350,6 +351,10 @@ def same_person_score(a: PersonName, b: PersonName) -> float:
     last_sim = jaro_winkler(a.last, b.last)
     if last_sim < 0.88:
         return 0.0
+    if len(a.first) == 1 or len(b.first) == 1:
+        # "S. Ibarra" vs "Samuel Ibarra": an initial is compatible with many names.
+        # Capped below the same-person threshold so it can only ever be soft evidence.
+        return 0.75 * last_sim if given_names_match(a.first, b.first) else 0.0
     if given_names_match(a.first, b.first):
         return min(1.0, 0.6 + 0.4 * last_sim)
     # Could be a maiden-name or data-entry situation; weak.
@@ -405,6 +410,7 @@ class EntityRecord:
     household_members: List[str] = field(default_factory=list)     # persons
     employer: Optional[str] = None                                 # persons
     sources: List[str] = field(default_factory=list)
+    lookup_hint: Optional[str] = None     # an address to disambiguate a provider lookup; never treated as the party's own identifier
     id: str = ""
 
     def __post_init__(self) -> None:
@@ -496,6 +502,68 @@ class Edge:
         return [s.description for s in self.signals]
 
 
+# (m, u) per signal: m = P(match | related), u = P(match | unrelated).
+# These defaults are priors.  `benchmarks/estimate_u.py` measures u directly from
+# a public corporate registry; `benchmarks/synthetic.py` measures the resulting
+# precision/recall; `load_weights()` swaps calibrated values in.
+DEFAULT_WEIGHTS: Dict[str, Tuple[float, float]] = {
+    "same_tax_id": (0.98, 0.00001),
+    "same_bank_account": (0.95, 0.00001),
+    "same_phone": (0.85, 0.0001),
+    "same_email": (0.90, 0.00001),
+    "same_private_domain": (0.70, 0.001),
+    "same_ip_address": (0.80, 0.001),
+    "same_device": (0.85, 0.0001),
+    "same_residential_address": (0.80, 0.0002),
+    "same_address": (0.60, 0.001),
+    "same_building": (0.20, 0.01),              # related parties usually share the suite, not just the tower
+    "same_mail_drop_address": (0.60, 0.10),
+    "officer_overlap": (0.90, 0.0001),
+    "common_owner": (0.92, 0.0001),
+    "same_registered_agent": (0.40, 0.08),
+    "same_incorporation_date": (0.60, 0.003),
+    "incorporated_same_month": (0.45, 0.03),
+    "same_org_name": (0.90, 0.0001),
+    "similar_org_name": (0.50, 0.01),
+    "same_person_name": (0.90, 0.0001),
+    "same_name_different_identifiers": (0.30, 0.02),   # same full name but disjoint addresses/phones: probably two people
+    "same_name_unverified": (0.60, 0.005),             # same full name, one side has no identifiers to check against
+    "shared_surname": (0.25, 0.004),            # u is replaced by the surname's own frequency
+    "officer_shares_surname": (0.25, 0.004),    # u is replaced by the surname's own frequency
+    "marriage_record": (0.98, 0.00001),
+    "household_record": (0.90, 0.0001),
+    "is_officer_of": (0.95, 0.0001),
+    "is_owner_of": (0.95, 0.0001),
+    "is_employed_by": (0.85, 0.001),
+    "formed_near_application": (0.50, 0.10),
+    "registry_officer": (0.98, 0.0001),
+    "registry_ownership": (0.98, 0.0001),
+    "application_disclosure": (0.99, 0.0001),
+}
+
+Weights = Dict[str, Tuple[float, float]]
+
+
+def _sig(kind: str, weights: Optional[Weights], u_override: Optional[float], description: str, value: str = "") -> Signal:
+    m, u = (weights or DEFAULT_WEIGHTS).get(kind, DEFAULT_WEIGHTS[kind])
+    if u_override is not None:
+        u = max(u_override, 1e-6)
+    return Signal(kind, m, u, description, value)
+
+
+def load_weights(path: str) -> Weights:
+    """Read calibrated weights written by the benchmark tooling.
+    Format: {"signal_kind": {"m": 0.8, "u": 0.0002}, ...}; missing kinds keep defaults."""
+    import json
+    with open(path) as fh:
+        raw = json.load(fh)
+    weights = dict(DEFAULT_WEIGHTS)
+    for kind, mu in raw.items():
+        if kind in weights and isinstance(mu, dict) and "m" in mu and "u" in mu:
+            weights[kind] = (float(mu["m"]), float(mu["u"]))
+    return weights
+
+
 def posterior_probability(llr_bits: float, prior: float) -> float:
     prior_logodds = math.log2(prior / (1.0 - prior))
     logodds = prior_logodds + llr_bits
@@ -506,7 +574,8 @@ def posterior_probability(llr_bits: float, prior: float) -> float:
     return 1.0 / (1.0 + 2.0 ** (-logodds))
 
 
-def _address_signal(a: EntityRecord, b: EntityRecord, provider: "RelationshipDataProvider") -> List[Signal]:
+def _address_signal(a: EntityRecord, b: EntityRecord, provider: "RelationshipDataProvider",
+                    weights: Optional[Weights] = None) -> List[Signal]:
     signals: List[Signal] = []
     a_addrs = {ca.full: (ca, raw) for raw in a.addresses if (ca := canonical_address(raw))}
     b_addrs = {cb.full: (cb, raw) for raw in b.addresses if (cb := canonical_address(raw))}
@@ -524,14 +593,11 @@ def _address_signal(a: EntityRecord, b: EntityRecord, provider: "RelationshipDat
             types = {addr_type(a, raw_a, ca), addr_type(b, raw_b, cb)}
             seen_bases.add(ca.base)
             if types & {"registered_agent", "virtual_office", "po_box"}:
-                signals.append(Signal("same_mail_drop_address", 0.6, 0.10,
-                                      f"Both use the same registered-agent / mail-drop address ({raw_a})", raw_a))
+                signals.append(_sig("same_mail_drop_address", weights, None, f"Both use the same registered-agent / mail-drop address ({raw_a})", raw_a))
             elif "residential" in types:
-                signals.append(Signal("same_residential_address", 0.80, 0.0002,
-                                      f"Both tied to the same residential address ({raw_a})", raw_a))
+                signals.append(_sig("same_residential_address", weights, None, f"Both tied to the same residential address ({raw_a})", raw_a))
             else:
-                signals.append(Signal("same_address", 0.60, 0.001,
-                                      f"Both tied to the same address including unit ({raw_a})", raw_a))
+                signals.append(_sig("same_address", weights, None, f"Both tied to the same address including unit ({raw_a})", raw_a))
     # Same building, different (or missing) unit
     for ca, raw_a in a_addrs.values():
         if ca.base in seen_bases:
@@ -541,117 +607,118 @@ def _address_signal(a: EntityRecord, b: EntityRecord, provider: "RelationshipDat
                 seen_bases.add(ca.base)
                 types = {addr_type(a, raw_a, ca), addr_type(b, raw_b, cb)}
                 if types & {"registered_agent", "virtual_office", "po_box"}:
-                    signals.append(Signal("same_mail_drop_address", 0.6, 0.10,
-                                          f"Both use the same registered-agent / mail-drop building ({raw_a})", raw_a))
+                    signals.append(_sig("same_mail_drop_address", weights, None, f"Both use the same registered-agent / mail-drop building ({raw_a})", raw_a))
                 elif "residential" in types:
-                    signals.append(Signal("same_residential_address", 0.80, 0.0002,
-                                          f"Both tied to the same residential address ({raw_a})", raw_a))
+                    signals.append(_sig("same_residential_address", weights, None, f"Both tied to the same residential address ({raw_a})", raw_a))
                 else:
-                    signals.append(Signal("same_building", 0.50, 0.01,
-                                          f"Both located in the same building, different unit ({raw_a} / {raw_b})", raw_a))
+                    signals.append(_sig("same_building", weights, None, f"Both located in the same building, different unit ({raw_a} / {raw_b})", raw_a))
                 break
     return signals
 
 
 def compare_entities(a: EntityRecord, b: EntityRecord, provider: "RelationshipDataProvider",
-                     application_date: Optional[date] = None) -> List[Signal]:
+                     application_date: Optional[date] = None,
+                     weights: Optional[Weights] = None) -> List[Signal]:
     """All attribute-level signals between two parties."""
     signals: List[Signal] = []
+    weights = weights or DEFAULT_WEIGHTS
 
     # Hard identifiers --------------------------------------------------------
     a_tax = {canonical_tax_id(t) for t in a.tax_ids} - {None}
     b_tax = {canonical_tax_id(t) for t in b.tax_ids} - {None}
     for t in a_tax & b_tax:
-        signals.append(Signal("same_tax_id", 0.98, 0.00001, "Identical tax identification number (EIN/TIN)",
+        signals.append(_sig("same_tax_id", weights, None, "Identical tax identification number (EIN/TIN)",
                               f"***{t[-4:]}"))
 
     for h in set(a.bank_account_hashes) & set(b.bank_account_hashes):
-        signals.append(Signal("same_bank_account", 0.95, 0.00001,
-                              "Payments routed to the same bank account", f"hash:{h[:8]}"))
+        signals.append(_sig("same_bank_account", weights, None, "Payments routed to the same bank account", f"hash:{h[:8]}"))
 
     a_ph = {canonical_phone(p) for p in a.phones} - {None}
     b_ph = {canonical_phone(p) for p in b.phones} - {None}
     for p in a_ph & b_ph:
-        signals.append(Signal("same_phone", 0.85, 0.0001, f"Same contact phone number (…{p[-4:]})", f"…{p[-4:]}"))
+        signals.append(_sig("same_phone", weights, None, f"Same contact phone number (…{p[-4:]})", f"…{p[-4:]}"))
 
     a_em = {canonical_email(e) for e in a.emails} - {None}
     b_em = {canonical_email(e) for e in b.emails} - {None}
     a_em_addr = {e[0] for e in a_em}
     b_em_addr = {e[0] for e in b_em}
     for e in a_em_addr & b_em_addr:
-        signals.append(Signal("same_email", 0.90, 0.00001, f"Same email address ({e})", e))
+        signals.append(_sig("same_email", weights, None, f"Same email address ({e})", e))
     if not (a_em_addr & b_em_addr):
         a_dom = {e[1] for e in a_em} | {canonical_domain(w) for w in a.websites} - {None}
         b_dom = {e[1] for e in b_em} | {canonical_domain(w) for w in b.websites} - {None}
         for d in (a_dom & b_dom) - _PUBLIC_EMAIL_DOMAINS - {None}:
-            signals.append(Signal("same_private_domain", 0.70, 0.001,
-                                  f"Email/web presence on the same private domain ({d})", d))
+            signals.append(_sig("same_private_domain", weights, None, f"Email/web presence on the same private domain ({d})", d))
 
     for ip in set(a.ip_addresses) & set(b.ip_addresses):
-        signals.append(Signal("same_ip_address", 0.80, 0.001, f"Submissions from the same IP address ({ip})", ip))
+        signals.append(_sig("same_ip_address", weights, None, f"Submissions from the same IP address ({ip})", ip))
     for dev in set(a.device_ids) & set(b.device_ids):
-        signals.append(Signal("same_device", 0.85, 0.0001, "Submissions from the same device fingerprint", dev[:8]))
+        signals.append(_sig("same_device", weights, None, "Submissions from the same device fingerprint", dev[:8]))
 
-    signals.extend(_address_signal(a, b, provider))
+    signals.extend(_address_signal(a, b, provider, weights))
 
     # Corporate structure signals ---------------------------------------------
     if a.kind == "organization" and b.kind == "organization":
         a_off = {parse_person_name(o).canonical for o in a.officers} - {""}
         b_off = {parse_person_name(o).canonical for o in b.officers} - {""}
         for person in a_off & b_off:
-            signals.append(Signal("officer_overlap", 0.90, 0.0001,
-                                  f"{person.title()} is an officer/director of both organizations", person))
+            signals.append(_sig("officer_overlap", weights, None, f"{person.title()} is an officer/director of both organizations", person))
         a_own = {parse_person_name(o.owner_name).canonical for o in a.owners} | \
                 {canonical_org_name(o.owner_name) for o in a.owners}
         b_own = {parse_person_name(o.owner_name).canonical for o in b.owners} | \
                 {canonical_org_name(o.owner_name) for o in b.owners}
         for owner in (a_own & b_own) - {""} - (a_off & b_off):
-            signals.append(Signal("common_owner", 0.92, 0.0001,
-                                  f"{owner.title()} holds ownership in both organizations", owner))
+            signals.append(_sig("common_owner", weights, None, f"{owner.title()} holds ownership in both organizations", owner))
 
         if a.registered_agent and b.registered_agent and \
                 canonical_org_name(a.registered_agent) == canonical_org_name(b.registered_agent):
-            signals.append(Signal("same_registered_agent", 0.40, 0.08,
-                                  f"Same registered agent ({a.registered_agent}); weak on its own",
+            signals.append(_sig("same_registered_agent", weights, None, f"Same registered agent ({a.registered_agent}); weak on its own",
                                   a.registered_agent))
 
         da, db = _parse_date(a.incorporation_date), _parse_date(b.incorporation_date)
         if da and db:
             if da == db:
-                signals.append(Signal("same_incorporation_date", 0.60, 0.003,
-                                      f"Both formed on the same day ({da.isoformat()})", da.isoformat()))
+                signals.append(_sig("same_incorporation_date", weights, None, f"Both formed on the same day ({da.isoformat()})", da.isoformat()))
             elif abs((da - db).days) <= 30:
-                signals.append(Signal("incorporated_same_month", 0.45, 0.03,
-                                      f"Formed within {abs((da - db).days)} days of each other", ""))
+                signals.append(_sig("incorporated_same_month", weights, None, f"Formed within {abs((da - db).days)} days of each other", ""))
 
         sim = org_name_similarity(a.name, b.name)
-        if sim >= 0.95:
-            signals.append(Signal("same_org_name", 0.90, 0.0001,
-                                  f"Organization names resolve to the same canonical name ('{canonical_org_name(a.name)}')",
+        if canonical_org_name(a.name) == canonical_org_name(b.name):
+            signals.append(_sig("same_org_name", weights, None, f"Organization names resolve to the same canonical name ('{canonical_org_name(a.name)}')",
                                   canonical_org_name(a.name)))
         elif sim >= 0.6:
-            signals.append(Signal("similar_org_name", 0.50, 0.01,
-                                  f"Organization names share most tokens ('{a.name}' vs '{b.name}')", ""))
+            signals.append(_sig("similar_org_name", weights, None, f"Organization names share most tokens ('{a.name}' vs '{b.name}')", ""))
 
     # Person-to-person signals ------------------------------------------------
     if a.kind == "person" and b.kind == "person":
         pa, pb = parse_person_name(a.name), parse_person_name(b.name)
         sp = same_person_score(pa, pb)
-        if sp >= 0.9:
-            signals.append(Signal("same_person_name", 0.90, 0.0001,
-                                  f"Names resolve to the same individual ('{a.name}' / '{b.name}')", pa.canonical))
+        if sp >= 0.9 and identity_conflict(a, b):
+            signals.append(_sig("same_name_different_identifiers", weights, None,
+                                f"Same name ('{a.name}' / '{b.name}') but different addresses and phones; likely two individuals",
+                                pa.canonical))
+        elif sp >= 0.9 and not (has_identifiers(a) and has_identifiers(b)):
+            signals.append(_sig("same_name_unverified", weights, None,
+                                f"Same name ('{a.name}' / '{b.name}') but no identifiers to confirm they are one person",
+                                pa.canonical))
+        elif sp >= 0.9:
+            signals.append(_sig("same_person_name", weights, None, f"Names resolve to the same individual ('{a.name}' / '{b.name}')", pa.canonical))
+        elif sp > 0:
+            # Initial-only match: soft, weighted like a shared surname.
+            freq = surname_frequency(pa.last)
+            signals.append(_sig("shared_surname", weights, freq,
+                                f"'{a.name}' is compatible with '{b.name}' (initial match, surname '{pa.last.title()}'); not conclusive",
+                                pa.last))
         elif pa.last and pb.last and jaro_winkler(pa.last, pb.last) >= 0.95 and not given_names_match(pa.first, pb.first):
             freq = surname_frequency(pa.last)
-            signals.append(Signal("shared_surname", 0.25, freq,
-                                  f"Shared surname '{pa.last.title()}' (≈{freq*100:.2f}% of population)", pa.last))
+            signals.append(_sig("shared_surname", weights, freq, f"Shared surname '{pa.last.title()}' (≈{freq*100:.2f}% of population)", pa.last))
         if a.spouse and parse_person_name(a.spouse).canonical == pb.canonical or \
                 b.spouse and parse_person_name(b.spouse).canonical == pa.canonical:
-            signals.append(Signal("marriage_record", 0.98, 0.00001, "Marriage record links the two individuals", ""))
+            signals.append(_sig("marriage_record", weights, None, "Marriage record links the two individuals", ""))
         a_hh = {parse_person_name(h).canonical for h in a.household_members}
         b_hh = {parse_person_name(h).canonical for h in b.household_members}
         if (pb.canonical in a_hh or pa.canonical in b_hh) and not any(s.kind == "marriage_record" for s in signals):
-            signals.append(Signal("household_record", 0.90, 0.0001,
-                                  "Public records place both individuals in the same household", ""))
+            signals.append(_sig("household_record", weights, None, "Public records place both individuals in the same household", ""))
 
     # Person-to-organization signals -------------------------------------------
     person, org = (a, b) if a.kind == "person" and b.kind == "organization" else \
@@ -659,24 +726,21 @@ def compare_entities(a: EntityRecord, b: EntityRecord, provider: "RelationshipDa
     if person and org:
         pn = parse_person_name(person.name)
         for officer in org.officers:
-            if same_person_score(pn, parse_person_name(officer)) >= 0.9:
-                signals.append(Signal("is_officer_of", 0.95, 0.0001,
-                                      f"{person.name} is listed as an officer/director of {org.name}", officer))
+            if same_person_score(pn, parse_person_name(officer)) >= 0.9 and not identity_conflict(person, org):
+                signals.append(_sig("is_officer_of", weights, None, f"{person.name} is listed as an officer/director of {org.name}", officer))
                 break
         for owner in org.owners:
             if same_person_score(pn, parse_person_name(owner.owner_name)) >= 0.9:
-                signals.append(Signal("is_owner_of", 0.95, 0.0001,
-                                      f"{person.name} holds {owner.percent:.0f}% ownership of {org.name}", owner.owner_name))
+                signals.append(_sig("is_owner_of", weights, None, f"{person.name} holds {owner.percent:.0f}% ownership of {org.name}", owner.owner_name))
                 break
         if person.employer and org_name_similarity(person.employer, org.name) >= 0.95:
-            signals.append(Signal("is_employed_by", 0.85, 0.001, f"{person.name} is employed by {org.name}", ""))
+            signals.append(_sig("is_employed_by", weights, None, f"{person.name} is employed by {org.name}", ""))
         # Surname of the person appears in org officers (possible family-run vendor)
         for officer in org.officers:
             on = parse_person_name(officer)
             if pn.last and on.last == pn.last and not given_names_match(pn.first, on.first):
                 freq = surname_frequency(pn.last)
-                signals.append(Signal("officer_shares_surname", 0.25, freq,
-                                      f"Officer '{officer}' of {org.name} shares surname '{pn.last.title()}' with {person.name}",
+                signals.append(_sig("officer_shares_surname", weights, freq, f"Officer '{officer}' of {org.name} shares surname '{pn.last.title()}' with {person.name}",
                                       pn.last))
                 break
 
@@ -691,13 +755,35 @@ def compare_entities(a: EntityRecord, b: EntityRecord, provider: "RelationshipDa
             if d and rec.kind == "organization" and rec.role in counterparty_roles and other.role in applicant_side_roles:
                 delta = (application_date - d).days
                 if -30 <= delta <= 90:
-                    signals.append(Signal("formed_near_application", 0.50, 0.10,
-                                          f"{rec.name} was formed {abs(delta)} days {'before' if delta >= 0 else 'after'} the application date",
+                    signals.append(_sig("formed_near_application", weights, None, f"{rec.name} was formed {abs(delta)} days {'before' if delta >= 0 else 'after'} the application date",
                                           d.isoformat()))
     dedup: Dict[Tuple[str, str], Signal] = {}
     for s in signals:
         dedup.setdefault((s.kind, s.value), s)
     return list(dedup.values())
+
+
+def has_identifiers(rec: EntityRecord) -> bool:
+    return bool(rec.addresses or rec.phones or rec.emails or rec.tax_ids or rec.bank_account_hashes)
+
+
+def identity_conflict(a: EntityRecord, b: EntityRecord) -> bool:
+    """True when two same-named person records carry incompatible identifiers:
+    both have addresses with no building in common and no phone in common.
+    Such records are kept as separate nodes instead of being merged."""
+    if a.kind != "person" or b.kind != "person":
+        return False
+    a_bases = {c.base for r in a.addresses if (c := canonical_address(r))}
+    b_bases = {c.base for r in b.addresses if (c := canonical_address(r))}
+    if not a_bases or not b_bases or (a_bases & b_bases):
+        return False
+    a_ph = {canonical_phone(p) for p in a.phones} - {None}
+    b_ph = {canonical_phone(p) for p in b.phones} - {None}
+    if a_ph & b_ph:
+        return False
+    a_em = {e[0] for e in ({canonical_email(x) for x in a.emails} - {None})}
+    b_em = {e[0] for e in ({canonical_email(x) for x in b.emails} - {None})}
+    return not (a_em & b_em)
 
 
 def classify_signals(signals: List[Signal], a: EntityRecord, b: EntityRecord) -> str:
@@ -752,7 +838,13 @@ class RelationshipDataProvider(Protocol):
     async def enrich_organization(self, name: str, tax_id: Optional[str] = None,
                                   address: Optional[str] = None) -> Optional[EntityRecord]: ...
 
-    async def enrich_person(self, name: str, address: Optional[str] = None) -> Optional[EntityRecord]: ...
+    async def enrich_person(self, name: str, address: Optional[str] = None) -> Optional[EntityRecord]:
+        """`address` is a disambiguation hint (the party's own address if known, otherwise the
+        address of the company that listed them).  When several people share the name,
+        return the one whose records touch that address.  If the hint does not settle it,
+        return None rather than guess: an unenriched node costs recall, a wrong person
+        costs a false accusation.  Never fabricate the hint into the returned record."""
+        ...
 
     def is_registered_agent_address(self, canonical_base_address: str) -> bool: ...
 
@@ -919,8 +1011,10 @@ class RelationshipAnalysis:
 
 class RelationshipEngine:
     def __init__(self, provider: Optional[RelationshipDataProvider] = None, prior_related: float = 0.02,
-                 report_threshold: float = 0.80, review_threshold: float = 0.35, max_hops: int = 3) -> None:
+                 report_threshold: float = 0.80, review_threshold: float = 0.35, max_hops: int = 3,
+                 weights: Optional[Weights] = None) -> None:
         self.provider = provider or NullProvider()
+        self.weights: Weights = dict(weights) if weights else dict(DEFAULT_WEIGHTS)
         self.prior = prior_related
         self.report_threshold = report_threshold
         self.review_threshold = review_threshold
@@ -929,64 +1023,89 @@ class RelationshipEngine:
     # -- entity assembly -----------------------------------------------------
 
     async def _enrich(self, rec: EntityRecord) -> None:
+        hint = rec.addresses[0] if rec.addresses else rec.lookup_hint
         if rec.kind == "organization":
-            ext = await self.provider.enrich_organization(rec.name, rec.tax_ids[0] if rec.tax_ids else None,
-                                                          rec.addresses[0] if rec.addresses else None)
+            ext = await self.provider.enrich_organization(rec.name, rec.tax_ids[0] if rec.tax_ids else None, hint)
         else:
-            ext = await self.provider.enrich_person(rec.name, rec.addresses[0] if rec.addresses else None)
+            ext = await self.provider.enrich_person(rec.name, hint)
         if ext:
             rec.merge(ext)
             if "provider" not in rec.sources:
                 rec.sources.append("provider")
 
+    async def _resolve_kind(self, name: str, hint: Optional[str]) -> str:
+        """Is an owner name a company or a person?  Ask the registry first ("Redstone
+        Consulting" has no legal suffix but is a company), then fall back to the
+        name heuristic."""
+        if not _looks_like_person(name):
+            return "organization"
+        try:
+            if await self.provider.enrich_organization(name, None, hint):
+                return "organization"
+            if await self.provider.enrich_person(name, hint):
+                return "person"
+        except Exception:
+            pass
+        return "person"
+
     async def _assemble(self, applicant: EntityRecord, key_personnel: List[EntityRecord],
                         counterparties: List[EntityRecord]) -> Tuple[Dict[str, EntityRecord], List[Edge]]:
         entities: Dict[str, EntityRecord] = {}
         structural: List[Edge] = []
+        weights = self.weights
 
         async def add(rec: EntityRecord) -> EntityRecord:
-            existing = entities.get(rec.id)
-            if existing:
-                existing.merge(rec)
-                return existing
-            await self._enrich(rec)
-            entities[rec.id] = rec
-            return rec
+            """Enrich first, then merge into an existing node unless the identifiers say
+            this is a different person who happens to share the name.  Same-named
+            people with disjoint addresses and phones become separate nodes
+            (id suffixed #2, #3, ...) linked only by a soft same-name signal."""
+            if rec.id not in entities or rec.kind == "person":
+                await self._enrich(rec)
+            base_id = rec.id
+            n = 1
+            while True:
+                existing = entities.get(rec.id)
+                if existing is None:
+                    entities[rec.id] = rec
+                    return rec
+                if not identity_conflict(existing, rec) and not _unverifiable_merge(existing, rec):
+                    existing.merge(rec)
+                    return existing
+                n += 1
+                rec.id = f"{base_id}#{n}"
 
         async def expand(rec: EntityRecord, depth: int) -> None:
             """Pull officers/owners/spouse/household into the graph as nodes with structural edges."""
             if depth > 2:
                 return
             if rec.kind == "organization":
+                org_hint = rec.addresses[0] if rec.addresses else None
                 for officer in rec.officers:
-                    p = await add(EntityRecord(name=officer, kind="person", role="officer"))
+                    p = await add(EntityRecord(name=officer, kind="person", role="officer", lookup_hint=org_hint))
                     structural.append(Edge(p.id, rec.id, "officer_of", 0.98, structural=True,
-                                           signals=[Signal("registry_officer", 0.98, 0.0001,
-                                                           f"{p.name} is a registered officer/director of {rec.name}")]))
+                                           signals=[_sig("registry_officer", weights, None, f"{p.name} is a registered officer/director of {rec.name}")]))
                     await expand(p, depth + 1)
                 for own in rec.owners:
-                    kind = "person" if _looks_like_person(own.owner_name) else "organization"
-                    o = await add(EntityRecord(name=own.owner_name, kind=kind, role="owner"))
+                    kind = await self._resolve_kind(own.owner_name, org_hint)
+                    o = await add(EntityRecord(name=own.owner_name, kind=kind, role="owner", lookup_hint=org_hint))
                     structural.append(Edge(o.id, rec.id, "owner_of", 0.98, structural=True,
                                            detail={"percent": own.percent},
-                                           signals=[Signal("registry_ownership", 0.98, 0.0001,
-                                                           f"{o.name} owns {own.percent:.0f}% of {rec.name}")]))
+                                           signals=[_sig("registry_ownership", weights, None, f"{o.name} owns {own.percent:.0f}% of {rec.name}")]))
                     await expand(o, depth + 1)
             else:
+                home_hint = rec.addresses[0] if rec.addresses else None
                 if rec.spouse:
-                    s = await add(EntityRecord(name=rec.spouse, kind="person", role="related"))
+                    s = await add(EntityRecord(name=rec.spouse, kind="person", role="related", lookup_hint=home_hint))
                     structural.append(Edge(rec.id, s.id, "spouse", 0.99, structural=True,
-                                           signals=[Signal("marriage_record", 0.98, 0.00001,
-                                                           f"Marriage record links {rec.name} and {s.name}")]))
+                                           signals=[_sig("marriage_record", weights, None, f"Marriage record links {rec.name} and {s.name}")]))
                     await expand(s, depth + 1)
                 for member in rec.household_members:
                     mid = entity_id(member, "person")
                     if rec.spouse and entity_id(rec.spouse, "person") == mid:
                         continue
-                    h = await add(EntityRecord(name=member, kind="person", role="related"))
+                    h = await add(EntityRecord(name=member, kind="person", role="related", lookup_hint=home_hint))
                     structural.append(Edge(rec.id, h.id, "household", 0.95, structural=True,
-                                           signals=[Signal("household_record", 0.90, 0.0001,
-                                                           f"{rec.name} and {h.name} share a household")]))
+                                           signals=[_sig("household_record", weights, None, f"{rec.name} and {h.name} share a household")]))
                     await expand(h, depth + 1)
 
         applicant.role = "applicant"
@@ -996,8 +1115,7 @@ class RelationshipEngine:
             kp.role = "key_personnel"
             p = await add(kp)
             structural.append(Edge(p.id, a.id, "key_personnel_of", 0.99, structural=True,
-                                   signals=[Signal("application_disclosure", 0.99, 0.0001,
-                                                   f"{p.name} is listed as key personnel on the application")]))
+                                   signals=[_sig("application_disclosure", weights, None, f"{p.name} is listed as key personnel on the application")]))
             await expand(p, 0)
         for cp in counterparties:
             c = await add(cp)
@@ -1023,12 +1141,37 @@ class RelationshipEngine:
         structural_by_pair: Dict[Tuple[str, str], List[Edge]] = {}
         for e in structural:
             structural_by_pair.setdefault((min(e.source, e.target), max(e.source, e.target)), []).append(e)
+        # Officer/owner names already resolved to a specific node by a registry edge.  A
+        # different person who merely shares that name must not pick up an inferred
+        # "is officer of" link to the same company.
+        resolved: Dict[Tuple[str, str], str] = {}
+        for e in structural:
+            if e.kind in {"officer_of", "owner_of"} and entities[e.source].kind == "person":
+                resolved[(e.target, person_key(entities[e.source].name))] = e.source
+            if e.kind in {"spouse", "household"}:
+                # "X's spouse is named Sofia M." has been resolved to one Sofia node; another
+                # Sofia must not inherit the marriage by name.
+                resolved[(e.source, person_key(entities[e.target].name))] = e.target
+                resolved[(e.target, person_key(entities[e.source].name))] = e.source
+        name_claimed = {"is_officer_of", "is_owner_of", "officer_shares_surname", "is_employed_by"}
+        kin_claimed = {"marriage_record", "household_record"}
         ids = list(entities)
         edges: List[Edge] = []
         for i in range(len(ids)):
             for j in range(i + 1, len(ids)):
                 a, b = entities[ids[i]], entities[ids[j]]
-                signals = compare_entities(a, b, self.provider, application_date)
+                signals = compare_entities(a, b, self.provider, application_date, self.weights)
+                person, org = (a, b) if a.kind == "person" and b.kind == "organization" else \
+                              (b, a) if b.kind == "person" and a.kind == "organization" else (None, None)
+                if person is not None:
+                    owner_node = resolved.get((org.id, person_key(person.name)))
+                    if owner_node is not None and owner_node != person.id:
+                        signals = [s for s in signals if s.kind not in name_claimed]
+                elif a.kind == "person" and b.kind == "person":
+                    kin_ab = resolved.get((a.id, person_key(b.name)))
+                    kin_ba = resolved.get((b.id, person_key(a.name)))
+                    if (kin_ab is not None and kin_ab != b.id) or (kin_ba is not None and kin_ba != a.id):
+                        signals = [s for s in signals if s.kind not in kin_claimed]
                 if not signals:
                     continue
                 pair = (min(a.id, b.id), max(a.id, b.id))
@@ -1335,9 +1478,40 @@ class RelationshipEngine:
         return {"nodes": nodes + list(attr_nodes.values()), "edges": edge_list + dedup_attr_edges}
 
 
+_ORG_WORDS = {
+    "holdings", "trust", "partners", "group", "fund", "capital", "consulting", "services", "service", "solutions",
+    "laboratories", "laboratory", "labs", "technologies", "technology", "systems", "data", "analytics", "research",
+    "institute", "associates", "enterprises", "international", "global", "logistics", "construction", "engineering",
+    "environmental", "development", "housing", "health", "education", "workforce", "foundation", "ventures",
+    "industries", "management", "properties", "realty", "investments", "medical", "clinic", "center", "centre",
+    "university", "college", "school", "church", "ministries", "bank", "insurance", "farms", "ranch", "company",
+}
+
+
+def _unverifiable_merge(existing: EntityRecord, incoming: EntityRecord) -> bool:
+    """True when one same-named person record has no identifiers at all and the other
+    was found through a different lookup hint.  Merging would assert, on the name
+    alone, that an unresolved applicant-side person is the individual found via a
+    counterparty's household or officer list.  Keep them apart; the soft
+    `same_name_unverified` signal records the possibility."""
+    if existing.kind != "person" or incoming.kind != "person":
+        return False
+    if has_identifiers(existing) == has_identifiers(incoming):
+        return False
+
+    def hint_base(rec: EntityRecord) -> Optional[str]:
+        src = rec.addresses[0] if rec.addresses else rec.lookup_hint
+        c = canonical_address(src) if src else None
+        return c.base if c else None
+
+    return hint_base(existing) != hint_base(incoming)
+
+
 def _looks_like_person(name: str) -> bool:
-    tokens = _strip_punct(name).split()
-    if any(t in _ORG_SUFFIXES or t in {"holdings", "trust", "partners", "group", "fund", "capital"} for t in tokens):
+    tokens = _strip_punct(name.replace(".", "")).split()
+    if any(t in _ORG_SUFFIXES or t in _ORG_WORDS for t in tokens):
+        return False
+    if any(t.isdigit() for t in tokens) or "&" in name:
         return False
     return 2 <= len(tokens) <= 4
 

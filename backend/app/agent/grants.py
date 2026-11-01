@@ -212,13 +212,17 @@ class ConflictOfInterestTool(BaseTool):
     description = "Detect conflict of interest and self-dealing using probabilistic relationship graph analysis"
 
     def __init__(self, provider=None, prior_related: float = 0.02,
-                 report_threshold: float = 0.80, review_threshold: float = 0.35, max_hops: int = 3):
+                 report_threshold: float = 0.80, review_threshold: float = 0.35, max_hops: int = 3,
+                 weights=None, weights_path: Optional[str] = None):
         super().__init__()
-        from app.agent.relationships import MockRelationshipProvider, RelationshipEngine
+        from app.agent.relationships import MockRelationshipProvider, RelationshipEngine, load_weights
         self.provider = provider if provider is not None else MockRelationshipProvider()
+        if weights is None and weights_path:
+            weights = load_weights(weights_path)
         self.engine = RelationshipEngine(self.provider, prior_related=prior_related,
                                          report_threshold=report_threshold,
-                                         review_threshold=review_threshold, max_hops=max_hops)
+                                         review_threshold=review_threshold, max_hops=max_hops,
+                                         weights=weights)
 
     async def execute(
         self,

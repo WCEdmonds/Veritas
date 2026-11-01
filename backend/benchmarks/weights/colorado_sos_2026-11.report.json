@@ -1,0 +1,174 @@
+{
+  "records": 149940,
+  "conditioned_on_city": true,
+  "u_statewide_same_address_for_reference": 1.372e-05,
+  "records_with_address": 149915,
+  "records_with_agent": 149893,
+  "records_with_formation_date": 149915,
+  "individual_agents": 103071,
+  "mail_drop_addresses": {
+    "1500 n grant st denver co 80203": 457,
+    "11002 benton st westminster co 80020": 382,
+    "3600 s yosemite st denver co 80237": 257,
+    "375 e horsetooth rd fort collins co 80525": 144,
+    "3151 s vaughn way aurora co 80014": 128,
+    "3630 sinton rd colorado springs co 80907": 125,
+    "23 inverness way e englewood co 80112": 105,
+    "2851 s parker rd aurora co 80014": 100,
+    "1825 lawrence st denver co 80202": 96,
+    "27 inverness dr e englewood co 80112": 95,
+    "730 17th st denver co 80202": 93,
+    "6400 s fiddlers green cir greenwood village co 80111": 86,
+    "10106 w san juan way littleton co 80127": 84,
+    "1888 n sherman st denver co 80203": 83,
+    "1776 s jackson st denver co 80210": 80,
+    "1800 wazee st denver co 80202": 77,
+    "111 s tejon st colorado springs co 80903": 76,
+    "4050 lee vance vw colorado springs co 80918": 72,
+    "4582 s ulster st denver co 80237": 70,
+    "1720 s bellaire st denver co 80222": 70,
+    "5995 greenwood plz blvd greenwood village co 80111": 68,
+    "9351 grant st thornton co 80229": 67,
+    "8301 e prentice ave greenwood village co 80111": 66,
+    "1008 8th st greeley co 80631": 66,
+    "1499 w 121st ave 100 westminster co 80234": 66
+  },
+  "mail_drop_address_count": 47,
+  "top_registered_agents": {
+    "service": 6222,
+    "c t system": 5637,
+    "colorado registered agents": 996,
+    "national registered agents": 625,
+    "cogency": 598,
+    "registered agent": 554,
+    "capitol corporate": 402,
+    "msi": 378,
+    "corporate creations network": 347,
+    "united agent": 341,
+    "advance hoa management": 332,
+    "incorp": 328,
+    "northwest registered agent": 318,
+    "registered agents": 259,
+    "rowcal management": 184
+  },
+  "surname_frequency_vs_engine_table": {
+    "smith": {
+      "registry": 0.00706,
+      "engine": 0.0088
+    },
+    "johnson": {
+      "registry": 0.00628,
+      "engine": 0.0069
+    },
+    "williams": {
+      "registry": 0.00266,
+      "engine": 0.0056
+    },
+    "brown": {
+      "registry": 0.00409,
+      "engine": 0.005
+    },
+    "jones": {
+      "registry": 0.00334,
+      "engine": 0.0049
+    },
+    "garcia": {
+      "registry": 0.00105,
+      "engine": 0.0044
+    },
+    "miller": {
+      "registry": 0.00514,
+      "engine": 0.0041
+    },
+    "davis": {
+      "registry": 0.00294,
+      "engine": 0.0037
+    },
+    "rodriguez": {
+      "registry": 0.00052,
+      "engine": 0.0036
+    },
+    "martinez": {
+      "registry": 0.0016,
+      "engine": 0.0035
+    },
+    "hernandez": {
+      "registry": 0.00046,
+      "engine": 0.0032
+    },
+    "lopez": {
+      "registry": 0.00049,
+      "engine": 0.003
+    },
+    "gonzalez": {
+      "registry": 0.00036,
+      "engine": 0.0029
+    },
+    "wilson": {
+      "registry": 0.00276,
+      "engine": 0.0028
+    },
+    "anderson": {
+      "registry": 0.00338,
+      "engine": 0.0027
+    }
+  },
+  "weights": {
+    "same_address": {
+      "m": 0.6,
+      "u": 0.00050991,
+      "u_default": 0.001,
+      "bits_default": 9.23,
+      "bits_measured": 10.2
+    },
+    "same_building": {
+      "m": 0.5,
+      "u": 0.00025496,
+      "u_default": 0.01,
+      "bits_default": 5.64,
+      "bits_measured": 10.94
+    },
+    "same_registered_agent": {
+      "m": 0.4,
+      "u": 0.00242326,
+      "u_default": 0.08,
+      "bits_default": 2.32,
+      "bits_measured": 7.37
+    },
+    "same_incorporation_date": {
+      "m": 0.6,
+      "u": 0.00023856,
+      "u_default": 0.003,
+      "bits_default": 7.64,
+      "bits_measured": 11.3
+    },
+    "incorporated_same_month": {
+      "m": 0.45,
+      "u": 0.00454321,
+      "u_default": 0.03,
+      "bits_default": 3.91,
+      "bits_measured": 6.63
+    },
+    "same_org_name": {
+      "m": 0.9,
+      "u": 2.09e-06,
+      "u_default": 0.0001,
+      "bits_default": 13.14,
+      "bits_measured": 18.72
+    },
+    "shared_surname": {
+      "m": 0.25,
+      "u": 0.00076803,
+      "u_default": 0.004,
+      "bits_default": 5.97,
+      "bits_measured": 8.35
+    },
+    "officer_shares_surname": {
+      "m": 0.25,
+      "u": 0.00076803,
+      "u_default": 0.004,
+      "bits_default": 5.97,
+      "bits_measured": 8.35
+    }
+  }
+}
