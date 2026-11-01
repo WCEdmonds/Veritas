@@ -228,10 +228,15 @@ class World:
             if key not in self._org_keys:
                 self._org_keys.add(key)
                 return name
-        # Vocabulary exhausted: disambiguate with a numeral so names stay unique.
-        name = f"{self.rng.choice(ORG_A)} {self.rng.choice(ORG_B)} {len(self.companies)} {self.rng.choice(ORG_SUFFIX)}".strip()
-        self._org_keys.add(canonical_org_name(name))
-        return name
+        # Vocabulary exhausted: disambiguate with a numeral, still checking the canonical key.
+        n = len(self.companies)
+        while True:
+            name = f"{self.rng.choice(ORG_A)} {self.rng.choice(ORG_B)} {n} {self.rng.choice(ORG_SUFFIX)}".strip()
+            key = canonical_org_name(name)
+            if key not in self._org_keys:
+                self._org_keys.add(key)
+                return name
+            n += 1
 
     def _make_company(self, officers: Optional[List[str]] = None, address: Optional[str] = None,
                       address_type: Optional[str] = None, phone: Optional[str] = None, agent: Optional[str] = None,

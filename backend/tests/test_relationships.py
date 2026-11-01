@@ -56,6 +56,28 @@ def test_entity_id_collapses_nicknames_and_legal_suffixes():
     assert canonical_org_name("Meridian Research Group, Inc.") == "meridian research"
 
 
+def test_org_name_abbreviations_and_state_codes_expand():
+    from app.agent.relationships import org_name_containment
+    assert canonical_org_name("IL DEPT. OF HUMAN SERVICES") == canonical_org_name("Illinois Department of Human Service")
+    assert canonical_org_name("PA DEPT OF PUBLIC WELFARE") == "pennsylvania department public welfare"
+    assert canonical_org_name("NEW YORK CITY HA") == canonical_org_name("New York City Housing Authority")
+    assert canonical_org_name("Univ. of Colorado Denver") == "university colorado denver"
+    assert canonical_org_name("IL DEPT. OF HUMAN SERVICES (2)") == canonical_org_name("IL DEPT OF HUMAN SERVICES")
+    assert canonical_org_name("Acme Holdings 2 LLC") != canonical_org_name("Acme Holdings LLC")   # series entities differ
+    assert canonical_org_name("3M Company") == "3m"
+    # 'CO' is a legal suffix for companies but a state for government bodies
+    assert canonical_org_name("Acme Widget Co") == "acme widget"
+    assert canonical_org_name("Acme Health Services Co") == "acme health"      # not 'county'
+    assert canonical_org_name("CO Department of Health") == "colorado department health"
+    assert canonical_org_name("St. Mary's Hospital") == "st marys hospital"
+    assert canonical_org_name("PA ST OFFICE OF THE GOVERNOR") == "pennsylvania state office governor"
+    # Lower-case 'ca' or a company called 'Ca Labs' must not become California
+    assert "california" not in canonical_org_name("Ca Labs Inc")
+    assert org_name_containment("University of California", "University of California Irvine")
+    assert not org_name_containment("State of Missouri", "Department of Economic Development Missouri")
+    assert not org_name_containment("Acme", "Acme Research")      # single-token names never contain
+
+
 def test_address_canonicalisation_splits_unit_and_abbreviates():
     a = canonical_address("1200 Research Parkway, Suite 400, Boulder, CO 80301-1234")
     b = canonical_address("1200 Research Pkwy Ste 400 Boulder CO 80301")

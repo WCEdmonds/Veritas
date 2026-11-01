@@ -62,8 +62,9 @@ def test_in_context_u_counts_only_unrelated_pairs(tmp_path):
 def test_alias_test_counts_links(tmp_path):
     al = bt.alias_test(_cache(tmp_path))
     assert al["alias_pairs"] == 2
-    assert al["linked_exact_canonical"] == 1          # "ACME HEALTH SYSTEM INC" -> same canonical
-    assert al["linked_exact_canonical"] + al["linked_similar"] + len(al["unlinked_examples"]) == 2
+    # "ACME HEALTH SYSTEM INC" drops the suffix; "ACME HLTH SYS" expands abbreviations: both canonical-equal
+    assert al["linked_exact_canonical"] == 2
+    assert al["unlinked_examples"] == []
 
 
 def test_record_and_family_helpers():

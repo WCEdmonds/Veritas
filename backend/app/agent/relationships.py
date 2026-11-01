@@ -179,12 +179,89 @@ def parse_person_name(name: str) -> PersonName:
     return PersonName(first, middle, last, raw)
 
 
+_ORG_ABBREVIATIONS = {
+    "dept": "department", "dpt": "department", "univ": "university", "assoc": "association", "assn": "association",
+    "intl": "international", "natl": "national", "svc": "service", "svcs": "service", "hosp": "hospital",
+    "med": "medical", "ctr": "center", "cntr": "center", "centre": "center", "inst": "institute", "tech": "technology",
+    "mgmt": "management", "govt": "government", "auth": "authority", "ha": "housing authority", "hlth": "health",
+    "sys": "system", "comm": "commission", "cmsn": "commission", "div": "division", "ofc": "office", "edu": "education",
+    "educ": "education", "dev": "development", "devel": "development", "econ": "economic", "cty": "county",
+    "co": "county", "twp": "township", "bd": "board", "dist": "district", "sch": "school", "schl": "school",
+    "cmty": "community", "comty": "community", "rsch": "research", "res": "research", "lab": "laboratory",
+    "labs": "laboratory", "laboratories": "laboratory", "hum": "human", "soc": "social", "pub": "public",
+    "welf": "welfare", "env": "environmental", "envtl": "environmental", "transp": "transportation",
+    "trans": "transportation", "agri": "agriculture", "ag": "agriculture", "st": "state", "corp": "",
+}
+_STATE_CODES = {
+    "al": "alabama", "ak": "alaska", "az": "arizona", "ar": "arkansas", "ca": "california", "co": "colorado",
+    "ct": "connecticut", "de": "delaware", "fl": "florida", "ga": "georgia", "hi": "hawaii", "id": "idaho",
+    "il": "illinois", "in": "indiana", "ia": "iowa", "ks": "kansas", "ky": "kentucky", "la": "louisiana",
+    "me": "maine", "md": "maryland", "ma": "massachusetts", "mi": "michigan", "mn": "minnesota", "ms": "mississippi",
+    "mo": "missouri", "mt": "montana", "ne": "nebraska", "nv": "nevada", "nh": "new hampshire", "nj": "new jersey",
+    "nm": "new mexico", "ny": "new york", "nc": "north carolina", "nd": "north dakota", "oh": "ohio", "ok": "oklahoma",
+    "or": "oregon", "pa": "pennsylvania", "ri": "rhode island", "sc": "south carolina", "sd": "south dakota",
+    "tn": "tennessee", "tx": "texas", "ut": "utah", "vt": "vermont", "va": "virginia", "wa": "washington",
+    "wv": "west virginia", "wi": "wisconsin", "wy": "wyoming", "dc": "district of columbia", "pr": "puerto rico",
+}
+_GOVT_CONTEXT = {"department", "dept", "state", "office", "university", "commonwealth", "county", "city", "board",
+                 "commission", "authority", "division", "agency", "bureau", "district", "services", "health",
+                 "education", "human", "public", "housing", "dhs", "dot", "doh"}
+# Plural -> singular for a few words that appear both ways in registries.
+_SINGULAR = {"services": "service", "systems": "system", "technologies": "technology", "laboratories": "laboratory",
+             "universities": "university", "associates": "associate", "partners": "partner", "industries": "industry",
+             "enterprises": "enterprise", "solutions": "solution", "holdings": "holding", "properties": "property"}
+
+
 def canonical_org_name(name: str) -> str:
-    """'The Northstar Analytics, L.L.C.' -> 'northstar analytics'."""
-    tokens = [t for t in _strip_punct(name.replace(".", "")).split() if t]
-    tokens = [t for t in tokens if t not in _ORG_SUFFIXES]
+    """'The Northstar Analytics, L.L.C.' -> 'northstar analytics';
+    'IL DEPT. OF HUMAN SERVICES' -> 'illinois department human service'."""
+    # Drop registration suffixes like "(2)" but keep meaningful digits: "Acme Holdings 2 LLC"
+    # is a different entity from "Acme Holdings LLC", and "3M" is a name.
+    cleaned = re.sub(r"\(\s*\d+\s*\)", " ", name.replace(".", "").replace("'", "").replace("’", ""))
+    raw_tokens = [t for t in re.sub(r"[^\w\s]", " ", cleaned).split() if t]
+    tokens: List[str] = []
+    lowered = [t.lower() for t in raw_tokens]
+    govt_context = bool(set(lowered) & _GOVT_CONTEXT)
+    for i, raw in enumerate(raw_tokens):
+        t = raw.lower()
+        if t in _STATE_CODES and len(raw) == 2 and raw.isupper() and govt_context:
+            tokens.extend(_STATE_CODES[t].split())
+            continue
+        if t in _ORG_SUFFIXES:
+            # "Co" is a company suffix far more often than "County"; always drop it.
+            continue
+        if t == "st":
+            # "PA ST DEPT" and "ST OFFICE OF ..." mean State; "St. Mary's Hospital" does not.
+            prev_state = i > 0 and lowered[i - 1] in _STATE_CODES and len(raw_tokens[i - 1]) == 2
+            next_govt = i + 1 < len(lowered) and lowered[i + 1] in {"dept", "department", "office", "board", "univ",
+                                                                       "university", "agency", "of", "dhs", "council"}
+            if prev_state or (govt_context and next_govt):
+                tokens.append("state")
+            else:
+                tokens.append(t)
+            continue
+        if t in _ORG_ABBREVIATIONS:
+            expansion = _ORG_ABBREVIATIONS[t]
+            if t in {"res", "ag", "ha", "comm", "trans", "dev"} and not govt_context:
+                expansion = t          # too ambiguous outside government names
+            if expansion:
+                tokens.extend(expansion.split())
+            continue
+        tokens.append(_SINGULAR.get(t, t))
     core = [t for t in tokens if t not in _ORG_STOPWORDS]
     return " ".join(core or tokens)
+
+
+def org_name_containment(a: str, b: str) -> bool:
+    """True when one canonical name appears as a contiguous token run inside the other,
+    e.g. 'university california' inside 'university california irvine'.  Requires at
+    least two tokens so 'state' alone never matches."""
+    ta, tb = canonical_org_name(a).split(), canonical_org_name(b).split()
+    short, long_ = (ta, tb) if len(ta) <= len(tb) else (tb, ta)
+    if len(short) < 2 or len(short) == len(long_):
+        return False
+    n = len(short)
+    return any(long_[i:i + n] == short for i in range(len(long_) - n + 1))
 
 
 @dataclass(frozen=True)
@@ -525,6 +602,7 @@ DEFAULT_WEIGHTS: Dict[str, Tuple[float, float]] = {
     "incorporated_same_month": (0.45, 0.03),
     "same_org_name": (0.90, 0.0001),
     "similar_org_name": (0.50, 0.01),
+    "org_name_contains": (0.50, 0.005),         # 'Acme Research LLC' inside 'Acme Research Holdings': typical subsidiary naming
     "same_person_name": (0.90, 0.0001),
     "same_name_different_identifiers": (0.30, 0.02),   # same full name but disjoint addresses/phones: probably two people
     "same_name_unverified": (0.60, 0.005),             # same full name, one side has no identifiers to check against
@@ -686,6 +764,9 @@ def compare_entities(a: EntityRecord, b: EntityRecord, provider: "RelationshipDa
         if canonical_org_name(a.name) == canonical_org_name(b.name):
             signals.append(_sig("same_org_name", weights, None, f"Organization names resolve to the same canonical name ('{canonical_org_name(a.name)}')",
                                   canonical_org_name(a.name)))
+        elif org_name_containment(a.name, b.name):
+            signals.append(_sig("org_name_contains", weights, None,
+                                f"One organization name contains the other ('{a.name}' / '{b.name}'); typical parent/subsidiary naming", ""))
         elif sim >= 0.6:
             signals.append(_sig("similar_org_name", weights, None, f"Organization names share most tokens ('{a.name}' vs '{b.name}')", ""))
 
@@ -821,7 +902,7 @@ def classify_signals(signals: List[Signal], a: EntityRecord, b: EntityRecord) ->
         return "operational_control"
     if kinds & {"shared_surname", "officer_shares_surname"}:
         return "possible_family"
-    if "similar_org_name" in kinds:
+    if kinds & {"similar_org_name", "org_name_contains"}:
         return "possible_affiliate"
     return "weak_association"
 
@@ -1288,10 +1369,15 @@ class RelationshipEngine:
             "same_building": "is in the same building as", "possible_family": "may be related to",
             "possible_affiliate": "may be affiliated with", "weak_association": "is weakly associated with",
         }
+        reverse_labels = {
+            "officer_of": "has officer", "owner_of": "is owned by", "key_personnel_of": "lists as key personnel",
+            "employed_by": "employs", "ownership_interest": "is partly owned by",
+        }
         for node, edge in zip(path[1:], edges):
-            label = labels.get(edge.kind, edge.kind.replace("_", " "))
+            reversed_edge = edge.source == node       # we arrived at the edge's source, so read it backwards
+            label = (reverse_labels.get(edge.kind) if reversed_edge else None) or labels.get(edge.kind, edge.kind.replace("_", " "))
             if edge.kind == "owner_of" and edge.detail.get("percent") is not None:
-                label = f"owns {edge.detail['percent']:.0f}% of"
+                label = f"is {edge.detail['percent']:.0f}% owned by" if reversed_edge else f"owns {edge.detail['percent']:.0f}% of"
             parts.append(f"{label} {entities[node].name}")
         return " → ".join(parts)
 
