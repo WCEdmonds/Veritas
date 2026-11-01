@@ -47,11 +47,11 @@ counterparty pairs are related) to produce a posterior probability.
 | Same phone | 13.1 | |
 | Officer / owner overlap | 13.1 | From registry |
 | Same residential address | 12.0 | |
-| Same address incl. unit | 9.2 | Commercial |
+| Same commercial address incl. unit | 6.9 | Alone routes to review; confirms with corroboration (see backtest) |
 | Same private email domain | 9.5 | |
 | Same full name, one side has no identifiers to check | 6.9 | Soft: routes to review, never confirms |
 | Shared surname | 4.8 to 6.0 | Weighted by surname frequency: Smith scores lower than Hale |
-| Same building, different unit | 4.3 | Multi-tenant; related parties usually share the suite |
+| Same building, different unit | 2.7 | Multi-tenant; related parties usually share the suite |
 | Same full name, disjoint addresses and phones | 3.9 | Probably two people |
 | Formed within 90 days of application | 2.3 | Applicant-counterparty pairs only |
 | Same registered agent | 2.3 | Nearly meaningless alone |
@@ -193,6 +193,68 @@ agrees with the engine's built-in one.
 
 The measured file is saved as `backend/benchmarks/weights/colorado_sos_2026-11.json`
 and loads with `load_weights()` or `ConflictOfInterestTool(weights_path=...)`.
+
+### Naive backtest on real federal award recipients
+
+`benchmarks.backtest_usaspending` pulls federal grant recipients from the
+public USAspending API with their SAM-registered parent organisation, address
+and alternate names, and runs three tests. The committed report
+(`backend/benchmarks/weights/usaspending_backtest_2026-11.json`) covers 160
+child organisations, 121 of which had a distinct parent with an address; the
+API throttled the pull before the full 250.
+
+**1. Pick the registered parent out of a line-up, names and addresses only.**
+Each child was shown its true parent plus six decoys, half from the same state.
+
+| | Count |
+|---|---|
+| Child/parent pairs | 121 |
+| True parent confirmed | 0 (3 before the recalibration below) |
+| True parent in review band | 21 |
+| Pairs where child and parent share a building | 5 |
+| Decoy parents | 726 |
+| Decoys confirmed (false flags) | 1 |
+
+Recall is low because the data is thin, not because the engine is wrong:
+only 5 of 121 real parent/child pairs share a building, so identifier
+matching has nothing to work with for 96% of them. Those are exactly the
+relationships the registry and vital-records providers exist to supply.
+Name containment ("University of California" inside "University of California
+Irvine") moved 12 pairs into review that would otherwise have been missed.
+The decoy false-flag rate was 0.14%; the one remaining false flag shares an
+exact address and a near-identical name with the child and is probably a
+mislabelled affiliate rather than an engine error.
+
+**2. Coincidence rates among unrelated grant recipients in the same city.**
+This is the number the Colorado registry could not give: the population is
+actual award recipients.
+
+| Signal | Colorado registry | Grant recipients | Old default | New default |
+|---|---|---|---|---|
+| Same address incl. unit | 0.0005 | 0.021 | 0.001 | 0.005 |
+| Same building | 0.00026 | 0.035 | 0.01 | 0.03 |
+
+Two percent of unrelated same-city recipients share an exact address (state
+agencies in capitol complexes, university departments, shared office towers).
+Before recalibration, all three confirmed true parents and the decoy false
+flag were confirmed on a shared address alone. The defaults were changed so
+that a shared commercial address by itself lands in the review band (about
+70%) and confirms only with corroboration; after the change those three true
+parents sit in review alongside the others. Residential address sharing keeps
+its full weight. The synthetic benchmark is unchanged by this (F1 0.980 and
+0.992 on the two seeds).
+
+**3. Alias resolution.** Of 4,097 alternate names recipients have used, the
+normaliser now links 40% to the primary name (24% before abbreviation and
+state-code expansion). Most of the rest are different agencies filed under one
+registration ("IL ST OFFICE OF THE GOVERNOR" under the Illinois human services
+DUNS), which no name logic should link.
+
+```
+cd backend
+python -m benchmarks.backtest_usaspending --cache /path/to/cache --pages 30 --max-children 250
+python -m benchmarks.backtest_usaspending --evaluate-only --cache /path/to/cache
+```
 
 ### What the calibration does not settle
 

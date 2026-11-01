@@ -592,8 +592,13 @@ DEFAULT_WEIGHTS: Dict[str, Tuple[float, float]] = {
     "same_ip_address": (0.80, 0.001),
     "same_device": (0.85, 0.0001),
     "same_residential_address": (0.80, 0.0002),
-    "same_address": (0.60, 0.001),
-    "same_building": (0.20, 0.01),              # related parties usually share the suite, not just the tower
+    # Commercial address coincidence is common among real award recipients: the USAspending
+    # backtest measured 2.1% of unrelated same-city grant recipients at the same address and
+    # 3.5% in the same building (capitol complexes, university campuses, shared office
+    # towers).  A shared commercial address alone therefore routes to review (~70%) and
+    # confirms only with corroboration.  Residential sharing stays strong.
+    "same_address": (0.60, 0.005),
+    "same_building": (0.20, 0.03),
     "same_mail_drop_address": (0.60, 0.10),
     "officer_overlap": (0.90, 0.0001),
     "common_owner": (0.92, 0.0001),

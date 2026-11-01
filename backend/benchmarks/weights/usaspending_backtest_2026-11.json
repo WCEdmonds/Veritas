@@ -1,0 +1,89 @@
+{
+  "affiliate_test": {
+    "child_parent_pairs": 121,
+    "true_parent_confirmed": 0,
+    "true_parent_review": 21,
+    "true_parent_missed": 100,
+    "recall_confirmed": 0.0,
+    "recall_confirmed_or_review": 0.174,
+    "pairs_sharing_a_building": 5,
+    "recall_when_building_shared": 0.0,
+    "decoy_candidates": 726,
+    "decoys_confirmed": 1,
+    "decoys_review": 8,
+    "decoy_false_flag_rate": 0.0014,
+    "decoy_signals_when_confirmed": {
+      "same_address": 1,
+      "similar_org_name": 1
+    },
+    "signals_on_true_parents": {
+      "similar_org_name": 6,
+      "same_address": 3,
+      "org_name_contains": 12,
+      "same_building": 1
+    },
+    "examples_confirmed": []
+  },
+  "in_context_u": {
+    "recipients_with_address": 266,
+    "unrelated_same_city_pairs": 289,
+    "u_same_building_in_context": 0.034602,
+    "u_same_address_in_context": 0.020761,
+    "reference": {
+      "colorado_city_conditioned": {
+        "same_building": 0.000255,
+        "same_address": 0.00051
+      },
+      "engine_defaults": {
+        "same_building": 0.01,
+        "same_address": 0.001
+      }
+    }
+  },
+  "alias_test": {
+    "alias_pairs": 4097,
+    "linked_exact_canonical": 415,
+    "linked_similar": 1237,
+    "share_linked": 0.403,
+    "unlinked_examples": [
+      {
+        "primary": "NEW YORK CITY HOUSING AUTHORITY",
+        "alias": "TRIBOROUGH PRESERVATION LLC"
+      },
+      {
+        "primary": "ILLINOIS DEPARTMENT OF HUMAN SERVICE",
+        "alias": "IL ST COUNCIL ON DEV DISABILITIES"
+      },
+      {
+        "primary": "ILLINOIS DEPARTMENT OF HUMAN SERVICE",
+        "alias": "IL ST OFFICE OF THE GOVERNOR"
+      },
+      {
+        "primary": "ILLINOIS DEPARTMENT OF HUMAN SERVICE",
+        "alias": "IL STATE BOARD OF EDUCATION"
+      },
+      {
+        "primary": "ILLINOIS DEPARTMENT OF HUMAN SERVICE",
+        "alias": "ILLINOIS  SCHOOL FOR THE VISUAL IMPAIRED"
+      },
+      {
+        "primary": "ILLINOIS DEPARTMENT OF HUMAN SERVICE",
+        "alias": "ILLINOIS COMMISSION ON VOLUNTEERISM AND COMMU"
+      },
+      {
+        "primary": "ILLINOIS DEPARTMENT OF HUMAN SERVICE",
+        "alias": "SERVE ILLINOIS COMMISSION ON VOLUNTEERISM AND"
+      },
+      {
+        "primary": "ILLINOIS DEPARTMENT OF HUMAN SERVICE",
+        "alias": "STATE OF ILLINOIS"
+      }
+    ]
+  },
+  "_meta": {
+    "source": "USAspending.gov recipient API, grants, pages 2-17 by amount",
+    "children_processed": 160,
+    "note": "partial pull; API throttled; evaluated with recalibrated same_address/same_building defaults",
+    "date": "2026-11-01"
+  }
+}
