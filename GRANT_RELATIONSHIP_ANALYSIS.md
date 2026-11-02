@@ -256,6 +256,55 @@ python -m benchmarks.backtest_usaspending --cache /path/to/cache --pages 30 --ma
 python -m benchmarks.backtest_usaspending --evaluate-only --cache /path/to/cache
 ```
 
+### Backtest on a registry with officers: Connecticut
+
+`benchmarks.backtest_ct_registry` uses Connecticut's open business registry,
+which publishes every business's principals with their residence addresses
+(data.ct.gov, 1.8 million principal rows). The residence address is what turns
+this into a real identity-resolution test. Report:
+`backend/benchmarks/weights/ct_registry_backtest_2026-11.json`, from 120,000
+principal rows and 3,500 business records.
+
+The engine was given only business names and business addresses, plus a
+provider over the registry, and asked to find links between pairs:
+
+| Set | What it is | n | Confirmed | Review | Not flagged |
+|---|---|---|---|---|---|
+| Positives | Same principal (name and residence) controls both businesses | 184 | 157 (85%) | 7 | 20 |
+| Hard negatives | Principals share a full name but live at different addresses | 206 | 23 (11%) | 175 | 8 |
+| Decoys | Unrelated businesses in the same city | 845 | 8 (0.95%) | 2 | 835 |
+
+The 20 missed positives are the same business re-registered under an identical
+name; the engine treats identically named entities as one and skips the pair.
+Of the 23 confirmed hard negatives, 14 are two businesses registered at the
+same business address, a real co-location finding whatever the principals'
+identities, and the label itself is noisy because people move between filings.
+Most decoy confirmations are a business registered at the applicant's
+principal's home, which is usually a family member's company, a relationship
+the engine is supposed to find.
+
+**What this test changed.** The first run confirmed 89% of the hard negatives
+as common control. The cause was a shortcut: when two companies' officer lists
+contained the same name, the pairwise comparison fired a hard "officer
+overlap" signal by name alone, bypassing the person-node identity resolution.
+That signal is now soft (`shared_officer_name`, with the measured in-context
+coincidence rate of 0.25% replacing an assumed 0.01%), and common control is
+confirmed only through a resolved person node that is an officer or owner of
+both companies. Two unresolved same-name nodes reached through different
+companies also no longer merge. The synthetic benchmark recovered to 100%
+recall on both seeds once its provider attached officer rows to companies the
+way a real registry does.
+
+### Running the pipeline without a database
+
+`EnhancedFraudInvestigationOrchestrator(db=None).investigate_case_data(case_id,
+case_data)` runs the full planner, executor, autonomous resolver and reporter
+on an in-memory case and returns the verdict, tool outputs, evidence and
+investigation log. With no LLM key configured the resolver processes only the
+deterministic grey areas (the relationship review band). Both a grant case and
+an unemployment case run end to end this way with no tool failures; the mock
+tools still produce mock findings.
+
 ### What the calibration does not settle
 
 - **Context.** A registry-wide collision rate answers "two random Colorado companies". The pairs Veritas compares sit on one application and are chosen by one applicant, so coincidences are more common than the registry suggests. Conditioning on city narrows the gap. Running the calibrated weights on the synthetic benchmark leaves precision and recall unchanged but routes every same-building and same-agent pair to review, which is more records pulls than an investigator would want. The shipped defaults are therefore kept deliberately conservative for those two signals. The right u for them should be measured on real co-application pairs, for which USAspending.gov subaward files are the free source.

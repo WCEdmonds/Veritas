@@ -1,0 +1,179 @@
+{
+  "dataset": {
+    "principals": 120000,
+    "businesses_with_master": 3509,
+    "identities": 100238,
+    "multi_business_identities": 13276,
+    "names_with_multiple_identities": 6445
+  },
+  "positives": {
+    "n": 184,
+    "confirmed": 157,
+    "review": 7,
+    "missed": 20,
+    "recall_confirmed": 0.853,
+    "types": {
+      "officer_of": 133,
+      "shell_cluster": 16,
+      "co_located": 8
+    },
+    "sharing_building": 123
+  },
+  "hard_negatives_same_name_different_residence": {
+    "n": 206,
+    "confirmed": 23,
+    "review": 175,
+    "none": 8,
+    "false_confirm_rate": 0.1117,
+    "types_when_confirmed": {
+      "officer_of": 4,
+      "co_located": 14,
+      "shell_cluster": 4,
+      "family_controlled_entity": 1
+    }
+  },
+  "decoys": {
+    "n": 845,
+    "confirmed": 8,
+    "review": 2,
+    "false_flag_rate": 0.0095,
+    "signals_when_confirmed": {
+      "same_residential_address": 11,
+      "registry_officer": 2,
+      "officer_shares_surname": 1
+    }
+  },
+  "in_context_u_principal_full_name_collision": {
+    "same_city_unrelated_pairs": 85134,
+    "pairs_sharing_a_principal_name": 209,
+    "u": 0.002455
+  },
+  "examples_positive_confirmed": [
+    {
+      "a": "Northwood R.E.T. LLC",
+      "b": "High Ridge associates llc",
+      "principal": "daniel witkins",
+      "band": "confirmed",
+      "type": "officer_of",
+      "probability": 1.0,
+      "path": "Daniel F. Witkins \u2192 is an officer of High Ridge associates llc",
+      "same_building": true
+    },
+    {
+      "a": "Soundview LLC",
+      "b": "Coast LLC",
+      "principal": "xinxiao zhang",
+      "band": "confirmed",
+      "type": "officer_of",
+      "probability": 1.0,
+      "path": "Xinxiao Zhang \u2192 is an officer of Coast LLC",
+      "same_building": true
+    },
+    {
+      "a": "Total Trash Solutions LLC",
+      "b": "328 Burnham LLC",
+      "principal": "tyler maneeley",
+      "band": "confirmed",
+      "type": "officer_of",
+      "probability": 1.0,
+      "path": "Craig Maneeley \u2192 is an officer of 328 Burnham LLC",
+      "same_building": true
+    },
+    {
+      "a": "Myrtle LLC",
+      "b": "Spooner Views LLC",
+      "principal": "devon dobson",
+      "band": "confirmed",
+      "type": "officer_of",
+      "probability": 1.0,
+      "path": "Devon Dobson \u2192 is an officer of Spooner Views LLC",
+      "same_building": true
+    }
+  ],
+  "examples_positive_missed": [
+    {
+      "a": "TENEZACA CORPORATION",
+      "b": "TENEZACA CORPORATION",
+      "principal": "marco tenezaca",
+      "band": "none",
+      "type": null,
+      "probability": null,
+      "path": null,
+      "same_building": true
+    },
+    {
+      "a": "Lifted Tack Consulting LLC",
+      "b": "Lifted Tack Consulting LLC",
+      "principal": "thomas edmundson",
+      "band": "none",
+      "type": null,
+      "probability": null,
+      "path": null,
+      "same_building": true
+    },
+    {
+      "a": "Triskel Health Inc.",
+      "b": "Triskel Health Inc.",
+      "principal": "sean hodgson",
+      "band": "none",
+      "type": null,
+      "probability": null,
+      "path": null,
+      "same_building": true
+    },
+    {
+      "a": "Pequot LLC",
+      "b": "PEQUOT LLC",
+      "principal": "thomas nolan",
+      "band": "none",
+      "type": null,
+      "probability": null,
+      "path": null,
+      "same_building": true
+    }
+  ],
+  "examples_negative_confirmed": [
+    {
+      "a": "RBS Investments LLC",
+      "b": "RJW Equipment LLC",
+      "principal_name": "greg weiner",
+      "band": "confirmed",
+      "type": "officer_of",
+      "path": "Greg Weiner \u2192 is an officer of RJW Equipment LLC",
+      "same_building": true
+    },
+    {
+      "a": "coreys payment center Limited Liability Company",
+      "b": "A&C Property LLC",
+      "principal_name": "corey rodgers",
+      "band": "confirmed",
+      "type": "co_located",
+      "path": "corey rodgers \u2192 is co-located with A&C Property LLC",
+      "same_building": false
+    },
+    {
+      "a": "QUICK MART NB LLC",
+      "b": "MODERN PUFF LLC",
+      "principal_name": "suleman khalid",
+      "band": "confirmed",
+      "type": "co_located",
+      "path": "QUICK MART NB LLC \u2192 is co-located with MODERN PUFF LLC",
+      "same_building": true
+    },
+    {
+      "a": "Afghanistan Human Rights Center Inc",
+      "b": "RUGNIFY Quality Handmade Rugs and Handicrafts LLC",
+      "principal_name": "mohammad mahmodi",
+      "band": "confirmed",
+      "type": "co_located",
+      "path": "Afghanistan Human Rights Center Inc \u2192 is co-located with RUGNIFY Quality Handmade Rugs and Handicrafts LLC",
+      "same_building": true
+    }
+  ],
+  "_meta": {
+    "source": "data.ct.gov ka36-64k6 (principals) + n7gp-d28j (business master)",
+    "principals_pulled": 120000,
+    "date": "2026-11-02",
+    "note": "engine state after making officer-name overlap soft and separating unresolved same-name nodes"
+  }
+}

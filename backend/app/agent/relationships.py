@@ -530,7 +530,7 @@ def entity_id(name: str, kind: str) -> str:
 # autonomous resolver fetches more evidence.
 HARD_SIGNALS = {
     "same_tax_id", "same_bank_account", "same_phone", "same_email", "same_device", "same_ip_address",
-    "same_residential_address", "same_address", "same_private_domain", "officer_overlap", "common_owner",
+    "same_residential_address", "same_address", "same_private_domain",
     "same_org_name", "same_person_name", "marriage_record", "household_record", "is_officer_of",
     "is_owner_of", "is_employed_by", "registry_officer", "registry_ownership", "application_disclosure",
 }
@@ -600,8 +600,13 @@ DEFAULT_WEIGHTS: Dict[str, Tuple[float, float]] = {
     "same_address": (0.60, 0.005),
     "same_building": (0.20, 0.03),
     "same_mail_drop_address": (0.60, 0.10),
-    "officer_overlap": (0.90, 0.0001),
-    "common_owner": (0.92, 0.0001),
+    # Name-only overlap between two companies' officer or owner lists.  SOFT: the Connecticut
+    # registry backtest showed 0.25% of unrelated same-city businesses have principals who
+    # share a full name, and treating the overlap as hard confirmed 89% of same-name
+    # different-person pairs as common control.  Confirmation must come from a resolved
+    # person node that is an officer/owner of both (structural edges), never from the name.
+    "shared_officer_name": (0.60, 0.0025),
+    "shared_owner_name": (0.60, 0.0025),
     "same_registered_agent": (0.40, 0.08),
     "same_incorporation_date": (0.60, 0.003),
     "incorporated_same_month": (0.45, 0.03),
@@ -742,16 +747,17 @@ def compare_entities(a: EntityRecord, b: EntityRecord, provider: "RelationshipDa
 
     # Corporate structure signals ---------------------------------------------
     if a.kind == "organization" and b.kind == "organization":
-        a_off = {parse_person_name(o).canonical for o in a.officers} - {""}
-        b_off = {parse_person_name(o).canonical for o in b.officers} - {""}
+        a_off = {person_key(o) for o in a.officers} - {""}
+        b_off = {person_key(o) for o in b.officers} - {""}
         for person in a_off & b_off:
-            signals.append(_sig("officer_overlap", weights, None, f"{person.title()} is an officer/director of both organizations", person))
-        a_own = {parse_person_name(o.owner_name).canonical for o in a.owners} | \
-                {canonical_org_name(o.owner_name) for o in a.owners}
-        b_own = {parse_person_name(o.owner_name).canonical for o in b.owners} | \
-                {canonical_org_name(o.owner_name) for o in b.owners}
+            signals.append(_sig("shared_officer_name", weights, None,
+                                f"An officer named {person.title()} appears on both organizations' filings (name match only; "
+                                f"identity confirmed separately)", person))
+        a_own = {person_key(o.owner_name) for o in a.owners} | {canonical_org_name(o.owner_name) for o in a.owners}
+        b_own = {person_key(o.owner_name) for o in b.owners} | {canonical_org_name(o.owner_name) for o in b.owners}
         for owner in (a_own & b_own) - {""} - (a_off & b_off):
-            signals.append(_sig("common_owner", weights, None, f"{owner.title()} holds ownership in both organizations", owner))
+            signals.append(_sig("shared_owner_name", weights, None,
+                                f"An owner named {owner.title()} appears on both organizations' filings (name match only)", owner))
 
         if a.registered_agent and b.registered_agent and \
                 canonical_org_name(a.registered_agent) == canonical_org_name(b.registered_agent):
@@ -892,7 +898,7 @@ def classify_signals(signals: List[Signal], a: EntityRecord, b: EntityRecord) ->
         return "household"
     if "same_residential_address" in kinds and a.kind == "person" and b.kind == "person":
         return "cohabitant"
-    if "officer_overlap" in kinds or "common_owner" in kinds or "same_bank_account" in kinds:
+    if "same_bank_account" in kinds:
         return "common_control"
     if kinds & {"same_phone", "same_email", "same_device", "same_ip_address"}:
         return "operational_control"
@@ -907,6 +913,8 @@ def classify_signals(signals: List[Signal], a: EntityRecord, b: EntityRecord) ->
         return "operational_control"
     if kinds & {"shared_surname", "officer_shares_surname"}:
         return "possible_family"
+    if kinds & {"shared_officer_name", "shared_owner_name"}:
+        return "possible_common_control"
     if kinds & {"similar_org_name", "org_name_contains"}:
         return "possible_affiliate"
     return "weak_association"
@@ -1199,6 +1207,8 @@ class RelationshipEngine:
         await expand(a, 0)
         for kp in key_personnel:
             kp.role = "key_personnel"
+            if not kp.addresses and not kp.lookup_hint and applicant.addresses:
+                kp.lookup_hint = applicant.addresses[0]     # listed by the applicant: look them up from there
             p = await add(kp)
             structural.append(Edge(p.id, a.id, "key_personnel_of", 0.99, structural=True,
                                    signals=[_sig("application_disclosure", weights, None, f"{p.name} is listed as key personnel on the application")]))
@@ -1587,14 +1597,17 @@ def _unverifiable_merge(existing: EntityRecord, incoming: EntityRecord) -> bool:
     `same_name_unverified` signal records the possibility."""
     if existing.kind != "person" or incoming.kind != "person":
         return False
-    if has_identifiers(existing) == has_identifiers(incoming):
-        return False
+    if has_identifiers(existing) and has_identifiers(incoming):
+        return False          # both resolved; identity_conflict() already judged them compatible
 
     def hint_base(rec: EntityRecord) -> Optional[str]:
         src = rec.addresses[0] if rec.addresses else rec.lookup_hint
         c = canonical_address(src) if src else None
         return c.base if c else None
 
+    # One or both sides unresolved: merge only when they were reached through the same
+    # place (same listing company or home).  Two unresolved "Greg Weiner"s found via two
+    # different companies stay apart; the name alone cannot make them one person.
     return hint_base(existing) != hint_base(incoming)
 
 

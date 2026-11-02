@@ -72,47 +72,70 @@ export default function LandingPage() {
     }
   ];
 
+  // Real, adjudicated or audited cases.  Figures and indicators are taken from the
+  // cited public sources; "Veritas" marks the indicators a Veritas tool is built to
+  // test, not a claim that the historical case was run through it.
   const fraudCases = {
     minnesota: {
-      name: "Minnesota Fraud Network (2024)",
-      description: "47 individuals used stolen identities to file 2,100+ fraudulent unemployment claims",
-      amount: "$3.7M stolen",
+      name: "Feeding Our Future, Minnesota (2020-2022)",
+      module: "Grant Oversight",
+      description:
+        "Federal child-nutrition funds passed through the Minnesota Department of Education to a sponsor whose sites claimed to serve thousands of meals a day. More than $250M was stolen; 78 people have been charged and 64 convicted, including the sponsor's founder.",
+      amount: "$250M+ stolen",
+      sources: [
+        { label: "Star Tribune, 50th conviction", url: "https://www.startribune.com/feeding-our-future-defendant-pleads-guilty-to-wire-fraud-50th-conviction-in-sprawling-case/601449298" },
+        { label: "FOX 9, 78th defendant charged", url: "https://www.fox9.com/news/feeding-our-future-78th-person-charged-pandemic-fraud-scheme-nov-2025" },
+      ],
       indicators: [
-        { label: "Multiple claims from same address", traditional: false, veritas: true },
-        { label: "SSN belongs to deceased individuals", traditional: false, veritas: true },
-        { label: "Prison inmates filing claims", traditional: false, veritas: true },
-        { label: "Same bank account for 50+ claims", traditional: false, veritas: true },
-        { label: "Plagiarized claim narratives (>90% similarity)", traditional: false, veritas: true },
-        { label: "VOIP phone numbers used", traditional: false, veritas: true },
-        { label: "Fake employer verification", traditional: true, veritas: true },
+        { label: "Dozens of new nonprofits formed weeks before claiming meals", traditional: false, veritas: true },
+        { label: "Sites and vendors registered at shared addresses", traditional: false, veritas: true },
+        { label: "Same individuals as officers across multiple sites and vendors", traditional: false, veritas: true },
+        { label: "Related-party food vendors owned by site operators", traditional: false, veritas: true },
+        { label: "Meal counts implausible for the claimed locations", traditional: true, veritas: true },
+        { label: "Fabricated attendance rosters and invoices", traditional: false, veritas: true },
+        { label: "Sponsor's oversight of its own sites never independently verified", traditional: true, veritas: true },
       ]
     },
     california: {
-      name: "California EDD Fraud (2020-2021)",
-      description: "Organized crime rings stole $11B using identity theft and fake employers",
-      amount: "$11B stolen",
+      name: "California EDD Pandemic Unemployment Fraud (2020-2021)",
+      module: "Benefits Integrity",
+      description:
+        "The state auditor confirmed at least $11B in fraudulent unemployment payments and later estimates put the figure near $20B, much of it through the federally funded Pandemic Unemployment Assistance program. Claims were filed in the names of prisoners, the deceased, and stolen identities.",
+      amount: "$20B estimated",
+      sources: [
+        { label: "KTVU, auditor estimate", url: "https://www.ktvu.com/news/california-auditor-says-edd-likely-has-paid-out-10-4b-in-fraudulent-claims-so-far" },
+        { label: "FOX LA, $20B figure", url: "https://www.foxla.com/news/californias-unemployment-fraud-reaches-at-least-20-billion" },
+        { label: "CBS Sacramento, state audit", url: "https://www.cbsnews.com/sacramento/news/california-edd-unprepared-state-audit-covid" },
+      ],
       indicators: [
-        { label: "Multi-state filing (same SSN in 4+ states)", traditional: false, veritas: true },
-        { label: "Deceased SSN (Death Master File check)", traditional: false, veritas: true },
-        { label: "35,000 prison inmates filing claims", traditional: false, veritas: true },
-        { label: "Employer does not exist in registry", traditional: true, veritas: true },
-        { label: "Fraud ring address (100+ claims)", traditional: false, veritas: true },
-        { label: "No social media presence (synthetic identity)", traditional: false, veritas: true },
-        { label: "Forged termination letters (document forensics)", traditional: false, veritas: true },
+        { label: "Claims filed in the names of incarcerated people", traditional: false, veritas: true },
+        { label: "Claims in the names of deceased individuals", traditional: false, veritas: true },
+        { label: "Same identity filing in multiple states", traditional: false, veritas: true },
+        { label: "Employers that do not exist in any registry", traditional: true, veritas: true },
+        { label: "Hundreds of claims mailed to one address", traditional: false, veritas: true },
+        { label: "Identities with no digital footprint (synthetic)", traditional: false, veritas: true },
+        { label: "Forged or templated supporting documents", traditional: false, veritas: true },
       ]
     },
-    nigerian: {
-      name: "Nigerian Fraud Ring (2020)",
-      description: "International crime syndicate filed 100,000+ claims using stolen PII from dark web",
-      amount: "$600M stolen",
+    washington: {
+      name: "Washington ESD / Scattered Canary (2020)",
+      module: "Benefits Integrity",
+      description:
+        "A Nigeria-based ring filed unemployment claims with stolen identities in the first weeks of the pandemic. Washington estimated $550M to $650M paid out and recovered roughly $350M; the state auditor found internal controls inadequate to prevent the scheme.",
+      amount: "$550M to $650M paid out",
+      sources: [
+        { label: "KUOW, state auditor report", url: "https://www.kuow.org/stories/washington-state-auditor-s-report-details-unemployment-fraud" },
+        { label: "KNKX, audit findings", url: "https://www.knkx.org/news/2020-12-18/audit-control-inadequate-at-employment-security-to-prevent-fraud" },
+        { label: "StateScoop, Scattered Canary", url: "https://statescoop.com/?p=39620" },
+      ],
       indicators: [
-        { label: "100,000+ claims across 17 states", traditional: false, veritas: true },
-        { label: "Graph network shows connected entities", traditional: false, veritas: true },
-        { label: "Stolen SSNs from data breaches", traditional: false, veritas: true },
-        { label: "IP addresses traced to Nigeria", traditional: true, veritas: true },
-        { label: "Employment verification failed", traditional: true, veritas: true },
-        { label: "Address hopping (10+ moves in 6 months)", traditional: false, veritas: true },
-        { label: "Forged pay stubs (advanced forensics)", traditional: false, veritas: true },
+        { label: "Bulk filings using breached personal data", traditional: false, veritas: true },
+        { label: "Clusters of claims sharing bank accounts and devices", traditional: false, veritas: true },
+        { label: "Claims for people still employed, never laid off", traditional: true, veritas: true },
+        { label: "Foreign IP addresses and VOIP contact numbers", traditional: true, veritas: true },
+        { label: "Claimant addresses that do not match any residence record", traditional: false, veritas: true },
+        { label: "Identical claim details across unrelated claimants", traditional: false, veritas: true },
+        { label: "Payments routed to out-of-state accounts opened days earlier", traditional: false, veritas: true },
       ]
     }
   };
@@ -354,9 +377,9 @@ export default function LandingPage() {
                 onChange={(e) => setSelectedCase(e.target.value)}
                 className="bg-[#0F1419] border border-blue-500/30 rounded-lg px-6 py-3 text-white text-lg font-semibold focus:outline-none focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/20 cursor-pointer hover:border-blue-500/50 transition-all"
               >
-                <option value="minnesota">Minnesota Fraud Network (2024) - $3.7M</option>
-                <option value="california">California EDD Fraud (2020-2021) - $11B</option>
-                <option value="nigerian">Nigerian Fraud Ring (2020) - $600M</option>
+                <option value="minnesota">Feeding Our Future, Minnesota - $250M+ (Grant Oversight)</option>
+                <option value="california">California EDD Pandemic Fraud - $20B est. (Benefits Integrity)</option>
+                <option value="washington">Washington ESD / Scattered Canary - $550M+ (Benefits Integrity)</option>
               </select>
             </div>
 
@@ -370,8 +393,24 @@ export default function LandingPage() {
                 </div>
                 <div className="text-left">
                   <div className="text-2xl font-bold text-red-400 mb-2">{currentCase.amount}</div>
-                  <div className="text-lg font-semibold mb-1">{currentCase.name}</div>
+                  <div className="text-lg font-semibold mb-1">
+                    {currentCase.name}
+                    <span className="ml-3 text-xs font-medium text-blue-300 bg-blue-500/10 border border-blue-500/20 rounded-full px-2 py-0.5 align-middle">
+                      {currentCase.module}
+                    </span>
+                  </div>
                   <div className="text-gray-400">{currentCase.description}</div>
+                  <div className="mt-3 text-xs text-gray-500">
+                    Sources:{' '}
+                    {currentCase.sources.map((s, i) => (
+                      <span key={s.url}>
+                        {i > 0 && ' · '}
+                        <a href={s.url} target="_blank" rel="noopener noreferrer" className="underline hover:text-gray-300">
+                          {s.label}
+                        </a>
+                      </span>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>

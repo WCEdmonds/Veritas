@@ -240,7 +240,7 @@ export default function CaseDetailPage() {
                 {evidence.raw_data?.relationship_graph?.nodes?.length > 0 && (
                   <div className="mb-3 border rounded bg-white p-2">
                     <p className="text-xs font-semibold text-gray-600 mb-1">Relationship Graph</p>
-                    <RelationshipGraph data={evidence.raw_data.relationship_graph} />
+                    <RelationshipGraph data={evidence.raw_data!.relationship_graph} />
                     {Array.isArray(evidence.raw_data?.conflicts_detected) && evidence.raw_data.conflicts_detected.length > 0 && (
                       <ul className="mt-2 space-y-1 text-xs text-gray-700">
                         {evidence.raw_data.conflicts_detected.map((c: any, idx: number) => (

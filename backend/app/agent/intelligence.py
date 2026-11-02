@@ -8,6 +8,7 @@ Tools that analyze patterns across multiple cases to detect:
 - Job posting activity vs growth claims
 """
 import httpx
+import re
 from typing import Dict, Any, List
 from datetime import datetime, timedelta
 import hashlib
@@ -430,12 +431,13 @@ class GraphNetworkTool(BaseTool):
         Mock fraud ring detection.
 
         Triggers:
-        - Phone contains "555" → Shared across 14 cases (fraud ring)
-        - Email domain is "fraud.com" → Part of network
+        - Phone ends in "0000" → Shared across 14 cases (fraud ring)
+          (every fictional number contains "555", so that alone must not trigger)
+        - Email contains "fraud" → Part of network
         - Normal data → No connections
         """
         # Fraud trigger: Shared phone number across cases
-        if phone and "555" in phone:
+        if phone and re.sub(r"\D", "", phone).endswith("0000"):
             return GraphNetworkOutput(
                 connected_entities_count=14,
                 fraud_ring_detected=True,

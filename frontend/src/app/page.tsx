@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { caseApi, type Case, type Stats } from '@/lib/api';
+import { caseApi, type Case, type CaseStatus, type Stats } from '@/lib/api';
 import { formatDate, getStatusColor, getRiskColor, getRiskLevel } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -27,7 +27,7 @@ export default function Dashboard() {
         caseApi.listCases({
           page: 1,
           page_size: 50,
-          status_filter: filter.status,
+          status_filter: (filter.status || undefined) as CaseStatus | undefined,
           min_risk_score: filter.minRisk,
         }),
         caseApi.getStats(),

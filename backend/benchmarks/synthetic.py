@@ -321,8 +321,16 @@ class SyntheticProvider:
             p = candidates[0]
         else:
             hint = canonical_address(address) if address else None
+            # A real registry attaches each officer row to its company, so an officer
+            # looked up from a company's address resolves to the person on that filing.
             matches = [c for c in candidates
                        if hint and (h := canonical_address(c.home)) and h.base == hint.base]
+            if not matches and hint:
+                for comp in self.world.companies.values():
+                    ca = canonical_address(comp.address)
+                    if ca and ca.base == hint.base:
+                        matches.extend(self.world.people[o] for o in comp.officers if self.world.people[o] in candidates)
+                matches = list({m.id: m for m in matches}.values())
             if len(matches) != 1:
                 return None
             p = matches[0]

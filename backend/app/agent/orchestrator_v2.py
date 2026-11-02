@@ -10,6 +10,7 @@ Implements comprehensive fraud detection using:
 
 Uses sophisticated Risk Matrix scoring with weighted factors.
 """
+from typing import Optional  # noqa: F401
 from typing import Dict, Any, List, TypedDict
 import asyncio
 from datetime import datetime
@@ -59,6 +60,8 @@ class InvestigationState(TypedDict):
     final_verdict: Dict[str, Any]
     current_step: str
     next_tools: List[str]
+    auto_resolutions: List[str]          # messages from the autonomous grey-area resolver
+    evidence: List[Dict[str, Any]]       # evidence entries (also written to the DB when one is present)
 
 
 class EnhancedFraudInvestigationOrchestrator:
@@ -106,26 +109,60 @@ class EnhancedFraudInvestigationOrchestrator:
         "utility_bill_verification": UtilityBillVerificationTool,
     }
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Optional[Session] = None):
+        """`db` may be None for a database-less run (tests, demos, benchmarks); evidence
+        is then kept only in the returned state."""
         self.db = db
         self.llm = self._initialize_llm()
         self.forensic_pipeline = ForensicPipeline()
         self.graph = self._build_graph()
 
     def _initialize_llm(self):
-        """Initialize the LLM based on configured provider."""
+        """Initialize the LLM based on configured provider.  Returns None when no API key
+        is configured; the LLM-dependent grey-area analysis then degrades gracefully."""
         if settings.llm_provider == "anthropic":
+            if not settings.anthropic_api_key:
+                return None
             return ChatAnthropic(
                 model=settings.llm_model or "claude-3-sonnet-20240229",
                 api_key=settings.anthropic_api_key,
                 temperature=settings.llm_temperature
             )
-        else:
-            return ChatOpenAI(
-                model=settings.llm_model or "gpt-4-turbo-preview",
-                api_key=settings.openai_api_key,
-                temperature=settings.llm_temperature
-            )
+        if not settings.openai_api_key:
+            return None
+        return ChatOpenAI(
+            model=settings.llm_model or "gpt-4-turbo-preview",
+            api_key=settings.openai_api_key,
+            temperature=settings.llm_temperature
+        )
+
+    def _persist(self, obj) -> None:
+        if self.db is not None:
+            self.db.add(obj)
+
+    def _commit(self) -> None:
+        if self.db is not None:
+            self.db.commit()
+
+    @staticmethod
+    def case_data_from_model(case: Case) -> Dict[str, Any]:
+        """Everything the planner and tools need, taken from the Case row.  The case type
+        drives tool selection; contact identifiers feed the identity and relationship tools."""
+        case_type = getattr(case, "case_type", None)
+        return {
+            "case_type": case_type.value if hasattr(case_type, "value") else (case_type or "GRANT"),
+            "applicant_name": case.applicant_name,
+            "applicant_tax_id": case.applicant_tax_id,
+            "applicant_address": case.applicant_address,
+            "applicant_ssn": getattr(case, "applicant_ssn", None),
+            "applicant_dob": getattr(case, "applicant_dob", None),
+            "applicant_phone": getattr(case, "applicant_phone", None),
+            "applicant_email": getattr(case, "applicant_email", None),
+            "previous_employer": getattr(case, "previous_employer", None),
+            "claim_amount": getattr(case, "claim_amount", None),
+            "external_ref_id": case.external_ref_id,
+            "application_date": case.created_at.date().isoformat() if getattr(case, "created_at", None) else None,
+        }
 
     def _build_graph(self) -> StateGraph:
         """Build the LangGraph state machine with autonomous resolution."""
@@ -148,6 +185,8 @@ class EnhancedFraudInvestigationOrchestrator:
 
     async def investigate(self, case_id: str) -> Dict[str, Any]:
         """Run the full investigation workflow for a case."""
+        if self.db is None:
+            raise ValueError("investigate() needs a database session; use investigate_case_data() without one")
         case = self.db.query(Case).filter(Case.id == case_id).first()
         if not case:
             raise ValueError(f"Case {case_id} not found")
@@ -156,24 +195,7 @@ class EnhancedFraudInvestigationOrchestrator:
         case.status = CaseStatus.PROCESSING
         self.db.commit()
 
-        # Initialize state
-        initial_state: InvestigationState = {
-            "case_id": str(case_id),
-            "case_data": {
-                "applicant_name": case.applicant_name,
-                "applicant_tax_id": case.applicant_tax_id,
-                "applicant_address": case.applicant_address,
-                "external_ref_id": case.external_ref_id,
-            },
-            "tool_outputs": {},
-            "investigation_log": [],
-            "final_verdict": {},
-            "current_step": "planner",
-            "next_tools": [],
-        }
-
-        # Run the graph
-        result = await self.graph.ainvoke(initial_state)
+        result = await self.run_graph(str(case_id), self.case_data_from_model(case))
 
         # Update case with final results
         case.final_risk_score = result["final_verdict"].get("risk_score", 0)
@@ -182,6 +204,32 @@ class EnhancedFraudInvestigationOrchestrator:
         self.db.commit()
 
         return result["final_verdict"]
+
+    async def investigate_case_data(self, case_id: str, case_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Run the full workflow on an in-memory case (no database).  Returns the final
+        state: verdict, tool outputs, investigation log and evidence entries."""
+        result = await self.run_graph(case_id, case_data)
+        return {
+            "final_verdict": result["final_verdict"],
+            "tool_outputs": result["tool_outputs"],
+            "investigation_log": result["investigation_log"],
+            "auto_resolutions": result.get("auto_resolutions", []),
+            "evidence": result.get("evidence", []),
+        }
+
+    async def run_graph(self, case_id: str, case_data: Dict[str, Any]) -> Dict[str, Any]:
+        initial_state: InvestigationState = {
+            "case_id": str(case_id),
+            "case_data": dict(case_data),
+            "tool_outputs": {},
+            "investigation_log": [],
+            "final_verdict": {},
+            "current_step": "planner",
+            "next_tools": [],
+            "auto_resolutions": [],
+            "evidence": [],
+        }
+        return await self.graph.ainvoke(initial_state)
 
     async def _planner_node(self, state: InvestigationState) -> InvestigationState:
         """
@@ -287,11 +335,17 @@ class EnhancedFraudInvestigationOrchestrator:
             # Store tool output
             state["tool_outputs"][tool_name] = result
 
-            # Save evidence to database
+            # Save evidence (to the database when there is one; always into the state)
             evidence = self._create_evidence_log(state["case_id"], tool_name, result)
-            self.db.add(evidence)
+            self._persist(evidence)
+            state.setdefault("evidence", []).append({
+                "tool": tool_name,
+                "source": evidence.source.value if hasattr(evidence.source, "value") else str(evidence.source),
+                "finding": evidence.synthesized_finding,
+                "risk_flag": evidence.risk_flag,
+            })
 
-        self.db.commit()
+        self._commit()
 
         state["investigation_log"].append(f"Executed {len(tool_names)} tools successfully")
 
@@ -316,14 +370,12 @@ class EnhancedFraudInvestigationOrchestrator:
             website = f"https://{applicant_name.lower().replace(' ', '')}.com"
             return tool.execute(website_url=website)
         elif tool_name == "phone_carrier":
-            # In production, would come from application data
-            return tool.execute(phone_number="555-0100")
+            return tool.execute(phone_number=case_data.get("applicant_phone") or "555-0100")
         elif tool_name == "email_footprint":
-            # In production, would come from application data
-            email = f"contact@{applicant_name.lower().replace(' ', '')}.com"
+            email = case_data.get("applicant_email") or f"contact@{applicant_name.lower().replace(' ', '')}.com"
             return tool.execute(email=email)
         elif tool_name == "breach_history":
-            email = f"contact@{applicant_name.lower().replace(' ', '')}.com"
+            email = case_data.get("applicant_email") or f"contact@{applicant_name.lower().replace(' ', '')}.com"
             return tool.execute(email=email, age=35)
         elif tool_name == "pdf_metadata":
             # In production, would analyze uploaded documents
@@ -349,9 +401,8 @@ class EnhancedFraudInvestigationOrchestrator:
             ]
             return tool.execute(employee_list=employee_list)
         elif tool_name == "graph_network":
-            # In production, would extract from application data
-            phone = "555-0100"
-            email = f"contact@{applicant_name.lower().replace(' ', '')}.com"
+            phone = case_data.get("applicant_phone") or "555-0100"
+            email = case_data.get("applicant_email") or f"contact@{applicant_name.lower().replace(' ', '')}.com"
             return tool.execute(
                 case_id=case_data.get("case_id", ""),
                 phone=phone,
@@ -398,9 +449,13 @@ class EnhancedFraudInvestigationOrchestrator:
                 ssn=ssn
             )
         elif tool_name == "foreign_entity_link":
-            # In production, extract from grant application
-            subcontractors = case_data.get("subcontractors", ["TechVendor LLC", "Research Support Inc"])
-            vendors = case_data.get("vendors", [])
+            # Parties may arrive as plain names or as dicts ({"name": ..., "role": ...}).
+            def names(items):
+                return [p.get("name", "") if isinstance(p, dict) else str(p) for p in (items or []) if p]
+            subcontractors = names(case_data.get("subcontractors") or case_data.get("contractors"))
+            vendors = names(case_data.get("vendors"))
+            if not subcontractors and not vendors:
+                subcontractors = ["TechVendor LLC", "Research Support Inc"]   # demo fallback
             return tool.execute(
                 applicant_name=applicant_name,
                 subcontractors=subcontractors,
@@ -588,20 +643,16 @@ class EnhancedFraudInvestigationOrchestrator:
         # Use LLM to analyze all tool outputs and identify grey areas
         grey_area_analysis = await self._llm_analyze_grey_areas(tool_outputs, case_data)
 
-        # Check for LLM analysis errors
+        # LLM-identified grey areas (none if the LLM is unavailable or failed)
         if grey_area_analysis.get("error"):
             state["investigation_log"].append(f"LLM grey area analysis failed: {grey_area_analysis['error']}")
-            state["auto_resolutions"] = []
-            return state
-
-        if not grey_area_analysis.get("has_grey_areas", False):
-            state["investigation_log"].append("LLM Analysis: No grey areas detected - proceeding to final report")
-            state["auto_resolutions"] = []
-            return state
-
-        # Extract grey areas and suggested resolutions
-        grey_areas = list(grey_area_analysis.get("grey_areas", []))
-        state["investigation_log"].append(f"LLM Analysis: {len(grey_areas)} grey areas identified")
+            grey_areas: List[Dict[str, Any]] = []
+        elif grey_area_analysis.get("note") == "no LLM configured":
+            state["investigation_log"].append("LLM Analysis skipped: no LLM configured (deterministic grey areas only)")
+            grey_areas = []
+        else:
+            grey_areas = list(grey_area_analysis.get("grey_areas", []))
+            state["investigation_log"].append(f"LLM Analysis: {len(grey_areas)} grey areas identified")
 
         # Deterministic grey areas: relationship links that scored in the review band.
         # These are handed to the resolver with the exact pair and the exact check needed,
@@ -621,6 +672,11 @@ class EnhancedFraudInvestigationOrchestrator:
                         "entity2": item.entity2,
                         "evidence": item.evidence,
                     })
+
+        if not grey_areas:
+            state["investigation_log"].append("No grey areas detected - proceeding to final report")
+            state["auto_resolutions"] = []
+            return state
 
         resolutions = []
 
@@ -763,6 +819,11 @@ class EnhancedFraudInvestigationOrchestrator:
                 ]
             }
         """
+        if self.llm is None:
+            # No LLM configured: the deterministic grey areas (e.g. relationship review band)
+            # are still processed by the caller; LLM-discovered ones are skipped.
+            return {"has_grey_areas": False, "grey_areas": [], "note": "no LLM configured"}
+
         # Format tool outputs for LLM analysis
         outputs_summary = self._format_tool_outputs_for_llm(tool_outputs)
 

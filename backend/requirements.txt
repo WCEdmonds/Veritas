@@ -14,10 +14,12 @@ redis==5.0.1
 celery==5.3.6
 
 # LLM & Agent Framework
-langchain==0.1.4
-langgraph==0.0.20
-langchain-openai==0.0.5
-langchain-anthropic==0.1.1
+# The original 0.1.x / 0.0.x pins no longer resolve together; this set is tested
+# end to end (orchestrator_v2 on Python 3.11, November 2026).
+langchain>=0.3,<0.4
+langgraph>=0.6,<0.7
+langchain-openai>=0.3,<0.4
+langchain-anthropic>=0.3,<0.4
 litellm==1.17.9
 
 # Vector & Graph Databases
